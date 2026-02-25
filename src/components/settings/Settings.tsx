@@ -27,7 +27,7 @@ import { IPositionalBarplotDataSeries, PreconfiguredPositionalBarplots } from ".
 import { AlignmentExampleFile, AlignmentFileDrop, AlignmentFileLoader } from "../AlignmentFileLoaderHook";
 import { Alignment } from "../../common/Alignment";
 
-interface ISettingsState {
+export interface ISettingsState {
   alignmentType: AminoAcidAlignmentTypeInstance | NucleotideAlignmentTypeInstance;
   ntColorScheme: NucleotideColorSchemeInstance;
   aaColorScheme: AminoacidColorSchemeInstance;
@@ -55,6 +55,7 @@ interface ISettingsState {
   alignmentLoading: boolean;
   loadingStatus: string;
   alignmentLoadError?: AlignmentLoadError;
+  statsVersion: number;
 } ;
 
 
@@ -248,19 +249,25 @@ export default function useAV2Settings(props:{
       return encodeURIComponent(toreturn);
     };
     const deserialize = (s: string) => {
-      const toreturn = decodeURIComponent(s).split("|").map(key => {
+      if (!s) return undefined;
+      const decoded = decodeURIComponent(s);
+      if (!decoded) return undefined;
+      
+      const keys = decoded.split("|");
+      const toreturn = keys.map(key => {
         return PreconfiguredPositionalBarplots.deserialize(key);
       });
-      return toreturn.findIndex(v => v === undefined) !== -1 ? [] :
+      
+      return toreturn.findIndex(v => v === undefined) !== -1 ? undefined :
         toreturn as IPositionalBarplotDataSeries[]
     };
     const all = PreconfiguredPositionalBarplots.list;
 
-    const initCacheVals = globalSettingsUrlLocalStorageManager.getCurrentDeserializedValue(
+    let initCacheVals = globalSettingsUrlLocalStorageManager.getCurrentDeserializedValue(
       propKey, deserialize
     );
     let initialValues = defaultVals;
-    if(useUrlAndLocalstorage && initCacheVals !== undefined){ //check that all are valid
+    if(useUrlAndLocalstorage && initCacheVals !== undefined && initCacheVals.length > 0){ //check that all are valid
       const allValid = initCacheVals.reduce((acc, cache)=>{
         if(!all.includes(cache)) acc = false;
         return acc;
@@ -325,6 +332,7 @@ export default function useAV2Settings(props:{
 
     alignmentLoading: false,
     loadingStatus: "" as string,
+    statsVersion: 0,
   });
 
   //
@@ -378,8 +386,8 @@ export default function useAV2Settings(props:{
     AlignmentLoader.onStatsReady = (updatedAlignment: Alignment) => {
       setState((prevState) => {
         if (prevState.alignment === updatedAlignment) {
-          // Same object reference — create a new wrapper to trigger re-render
-          return { ...prevState, alignment: updatedAlignment, statsVersion: (prevState as any).statsVersion + 1 || 1 };
+          // Same object reference — increment version to trigger re-render
+          return { ...prevState, alignment: updatedAlignment, statsVersion: prevState.statsVersion + 1 };
         }
         return prevState;
       });
@@ -398,7 +406,8 @@ export default function useAV2Settings(props:{
       ...prevState,
       alignment: alignment,
       alignmentLoading: false,
-      alignmentLoadError: undefined
+      alignmentLoadError: undefined,
+      statsVersion: 0
     }});
     requestSettingsClose();
   }, [requestSettingsClose]);
@@ -450,10 +459,11 @@ export default function useAV2Settings(props:{
       //is there an alignment in the URL?
       const alignmentUrlName = "alignment-url";
       const potentialUrl = globalSettingsUrlLocalStorageManager.getAlignmentUrlParam();
+      const potentialName = globalSettingsUrlLocalStorageManager.getAlignmentNameParam();
 
       if (potentialUrl) {
         try {
-          const url = new URL(potentialUrl);  //throws an exception 
+          const url = new URL(potentialUrl, window.location.origin);  //throws an exception if invalid
           if (url.protocol !== "http:" && url.protocol !== "https:"){
             throw new Error(
               `URL protocol is "${url.protocol}" not "http:" or "https:"`
@@ -465,7 +475,8 @@ export default function useAV2Settings(props:{
             potentialUrl,
             state.removeDuplicateSequences,
             onAlignmentReceived,
-            onAlignmentLoadError
+            onAlignmentLoadError,
+            potentialName || undefined
           );
         } catch (e) {
           console.error(

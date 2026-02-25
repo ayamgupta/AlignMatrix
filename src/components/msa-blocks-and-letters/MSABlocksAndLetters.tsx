@@ -86,6 +86,12 @@ export type MSABlocksAndLettersProps = {
    */
   externalSequencesOffset?: number;
 
+  /**
+   * Incremented whenever alignment statistics (consensus, sequence count) change.
+   * Triggers re-rendering during streaming.
+   */
+  statsVersion?: number;
+
   //virtualization
   horizVirtualization: IControllerRole | IResponderRole | "Automatic" | "None";
   vertVirtualization: IControllerRole | IResponderRole | "Automatic" | "None";
@@ -317,6 +323,7 @@ export function MSABlocksAndLetters(props: MSABlocksAndLettersProps) {
           positionX={worldShiftLeftPx ? -worldShiftLeftPx : 0}
           positionY={worldShiftTopPx ? -worldShiftTopPx : 0}
           sequencesRowOffset={externalSequences !== undefined ? externalSequencesOffset : 0}
+          statsVersion={props.statsVersion}
         />
         
         <MSALetters
@@ -355,7 +362,8 @@ export function MSABlocksAndLetters(props: MSABlocksAndLettersProps) {
     residueHeight,
     residueWidth,
     sortBy,
-    sliceSequences
+    sliceSequences,
+    props.statsVersion
   ]);
 
   const horizontalParams: IVirtualizeParams | undefined = useMemo(()=>{

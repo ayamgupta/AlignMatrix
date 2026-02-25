@@ -58,6 +58,7 @@ import { AlignmentSpreadsheet, IAlignmentSpreadsheetProps } from "./alignment-me
 //
 export type IAlignmentViewerProps = {
   alignment: Alignment;
+  statsVersion?: number;
   alignmentType?: AminoAcidAlignmentTypeInstance | NucleotideAlignmentTypeInstance;
   highlightPositionalMatches?: ISearchMatchDetails;
   triggerShowSearch?: React.MutableRefObject<(() => void) | undefined>;
@@ -287,7 +288,7 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
       cellCount: alignment.getSequenceCount(),
       cellSizePx: residueHeight
     } as IControllerRole]
-  }, [alignment, alignmentUUID, residueHeight]);
+  }, [alignment, alignmentUUID, residueHeight, props.statsVersion]);
 
   //
   // state
@@ -327,13 +328,20 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
   const [sequenceAnnotations, setSequenceAnnotations] = useState<any[]>([]);
   // rowOffset: the absolute index of sequences[0] in the full alignment.
   // MSABlocksAndLetters receives this so it can convert absolute→relative indices.
-  const [rowOffset, setRowOffset] = useState<number>(0);
-  // False while background stats are still computing (large files only).
-  // Logo and barplots are hidden until this flips true.
-  const [statsReady, setStatsReady] = useState<boolean>(true);
-
-  // Track the visible row range so we only re-fetch when it changes
-  const [visibleRowRange, setVisibleRowRange] = useState<{ start: number; end: number } | null>(null);
+    const [rowOffset, setRowOffset] = useState<number>(0);
+  
+    // False while background stats are still computing (large files only).
+    // Logo and barplots are hidden until this flips true.
+    const [statsReady, setStatsReady] = useState<boolean>(() => {
+      if (!alignment.getSlice) return true;
+      const plc = (alignment as any).positionalLetterCounts as Map<any,any>;
+      return !!(plc && plc.size > 0);
+    });
+  
+    const statsCheckTimer = React.useRef<number | undefined>(undefined);
+  
+    // Track the visible row range so we only re-fetch when it changes
+    const [visibleRowRange, setVisibleRowRange] = useState<{ start: number; end: number } | null>(null);
 
   // Whenever the alignment changes, reset and load sequences
   useEffect(() => {
@@ -363,27 +371,30 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alignment, sortBy]);
 
-  // Watch for background stats completion on large-file alignments.
-  // positionalLetterCounts starts empty and gets populated by the worker's
-  // "stats" message. Poll with a short interval until entries appear.
   useEffect(() => {
-    if (!alignment.getSlice) return; // small files: stats always ready
-    setStatsReady(false);
+    if (!alignment.getSlice) {
+      setStatsReady(true);
+      return;
+    }
+    
     const check = () => {
-      // getPositionalLetterCounts returns the internal Map — check its size
-      const plc = (alignment as any).positionalLetterCounts as Map<any,any>;
-      if (plc && plc.size > 0) {
+      const currentPlc = (alignment as any).positionalLetterCounts as Map<any,any>;
+      if (currentPlc && currentPlc.size > 0) {
         setStatsReady(true);
       } else {
         statsCheckTimer.current = window.setTimeout(check, 500);
       }
     };
-    statsCheckTimer.current = window.setTimeout(check, 500);
-    return () => { if (statsCheckTimer.current) clearTimeout(statsCheckTimer.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alignment]);
 
-  const statsCheckTimer = React.useRef<number | undefined>(undefined);
+    const plc = (alignment as any).positionalLetterCounts as Map<any,any>;
+    if (plc && plc.size > 0) {
+      setStatsReady(true);
+    } else {
+      setStatsReady(false);
+      check();
+    }
+    return () => { if (statsCheckTimer.current) clearTimeout(statsCheckTimer.current); };
+  }, [alignment, props.statsVersion]);
 
   // For large files: fetch the visible row slice when the viewport changes
   useEffect(() => {
@@ -436,15 +447,15 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
     handleMouseStoppedHoveringVert
   ]);
 
-  //logos
+  //sequence logo
   const renderedSequenceLogo = useMemo(() => {
-    if (!statsReady) return undefined;
     return attachEventHorizListeners({
       horizContent: true,
       content: (
         <SequenceLogo
           svgId={logoOptions.svgId}
           alignment={alignment}
+          statsVersion={props.statsVersion}
           alignmentType={alignmentType}
           aaColorScheme={aaColorScheme}
           ntColorScheme={ntColorScheme}
@@ -466,20 +477,20 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
     aaColorScheme,
     ntColorScheme,
     attachEventHorizListeners,
-    statsReady
+    props.statsVersion
   ]);
 
   //barplots
   const renderBarplot = useCallback((
     barplotProps: IBarplotExposedProps
   ) => {
-    if (!statsReady) return undefined;
     return attachEventHorizListeners({
       horizContent: true,
       content: (
         <PositionalBarplot
           svgId={barplotProps.svgId}
           alignment={alignment}
+          statsVersion={props.statsVersion}
           searchDetails={highlightPositionalMatches}
           tooltipPlacement={barplotProps.tooltipPlacement}
           dataSeriesSet={barplotProps.dataSeriesSet}
@@ -494,7 +505,7 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
     highlightPositionalMatches,
     residueWidth, 
     xViewportResponderVirtualization,
-    statsReady,
+    props.statsVersion
   ]);
 
   //positionaxis
@@ -548,6 +559,7 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
           fontSize={fontSize}
           residueHeight={residueHeight}
           residueWidth={residueWidth}
+          statsVersion={props.statsVersion}
           horizontalScrollbar={ScrollbarOptions.NeverOn}
         />
       )
@@ -567,7 +579,8 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
     alignmentType,
     aaColorScheme,
     ntColorScheme,
-    xViewportResponderVirtualization
+    xViewportResponderVirtualization,
+    props.statsVersion
   ]);
 
   //consensus
@@ -612,6 +625,8 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
         syncWithVerticalVirtualization={
           yViewportResponderVirtualization
         }
+        externalSequencesOffset={alignment.getSlice ? rowOffset : 0}
+        statsVersion={props.statsVersion}
       />
     );
   }, [
@@ -624,7 +639,9 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
     positionsToStyle,
     showMinimap,
     sortBy,
-    yViewportResponderVirtualization
+    yViewportResponderVirtualization,
+    rowOffset,
+    props.statsVersion
   ]);
 
   const closeSearch = useCallback(()=>{
@@ -696,7 +713,7 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
     }
 
     return toreturn;
-  }, [alignment, sortBy, sequenceAnnotations, rowOffset]);
+  }, [alignment, sortBy, sequenceAnnotations, rowOffset, props.statsVersion]);
 
 
   //
@@ -763,6 +780,7 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
                 sortBy={sortBy}
                 externalSequences={alignment.getSlice ? sequences : undefined}
                 externalSequencesOffset={alignment.getSlice ? rowOffset : 0}
+                statsVersion={props.statsVersion}
                 vertVirtualization={yViewportControllerVirtualization}
                 horizVirtualization={xViewportControllerVirtualization}
                 highlightPositionalMatches={highlightPositionalMatches}
@@ -788,9 +806,23 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
                   if (mainViewportVisibleChanged){
                     mainViewportVisibleChanged(props)
                   }
-                  // Update visible row range for large-file slice fetching
+                  // Update visible row range for large-file slice fetching.
+                  // We fetch a buffer of rows around the visible area to make scrolling smoother.
                   if (alignment.getSlice) {
-                    setVisibleRowRange({ start: props.seqIdxStart, end: props.seqIdxEnd });
+                    const bufferSize = 500;
+                    const currentStart = visibleRowRange?.start ?? -1;
+                    const currentEnd = visibleRowRange?.end ?? -1;
+
+                    // Re-fetch if we are near the edge of the current buffer
+                    const isNearEdge = 
+                      props.seqIdxStart < currentStart + 100 || 
+                      props.seqIdxEnd > currentEnd - 100;
+
+                    if (isNearEdge) {
+                      const newStart = Math.max(0, props.seqIdxStart - bufferSize);
+                      const newEnd = props.seqIdxEnd + bufferSize;
+                      setVisibleRowRange({ start: newStart, end: newEnd });
+                    }
                   }
                 }}
               ></MSABlocksAndLetters>

@@ -29,6 +29,7 @@ export interface IPositionalBarplotProps {
   svgId: string; //used for exporting
   searchDetails?: ISearchMatchDetails;
   alignment: Alignment;
+  statsVersion?: number;
   positionWidth: number;
 
   //props that should be exposed in AlignmentViewer:
@@ -69,6 +70,7 @@ export const PreconfiguredPositionalBarplots = (() => {
     plotOptions: {
       fixYMax: (al: Alignment) => {
         const allLettersInAlignment = al.getAllUpperAlphaLettersInAlignmentSorted();
+        if (allLettersInAlignment.length === 0) return 4.32; // Fallback for 20 Amino Acids: log2(20)
         const p = 1 / allLettersInAlignment.length;
         return (
           -1 *
@@ -281,15 +283,24 @@ export function PositionalBarplot(props: IPositionalBarplotProps){
       }
       return acc;
     }, [] as number[]);
+
+    if (allValidHeights.length === 0) {
+      return bars.map(b => ({ ...b, normalizedHeight: undefined }));
+    }
+
     const overallMinHeight = Math.min(...allValidHeights);
     const overallMaxHeight = Math.max(...allValidHeights);
     return bars.map((bar) => {
       const minHeight = overallMinHeight;
-      const maxHeight =
+      let maxHeight =
         bar.dataSeriesSet.plotOptions && bar.dataSeriesSet.plotOptions.fixYMax
           ? bar.dataSeriesSet.plotOptions.fixYMax(alignment)
           : overallMaxHeight;
       
+      if (isNaN(maxHeight) || maxHeight === minHeight) {
+        maxHeight = minHeight + 1; // avoid division by zero
+      }
+
       const normalizedHeight = bar.height === undefined
         ? NaN
         : ((bar.height - minHeight) / (maxHeight - minHeight)) *
@@ -302,7 +313,7 @@ export function PositionalBarplot(props: IPositionalBarplotProps){
           : normalizedHeight
       };
     });
-  }, [alignment]);
+  }, [alignment, props.statsVersion]);
 
 
 
@@ -359,7 +370,8 @@ export function PositionalBarplot(props: IPositionalBarplotProps){
     dataSeriesSet, 
     normalizeBarHeights,
     searchDetails, 
-    svgId
+    svgId,
+    props.statsVersion
   ])
 
   //

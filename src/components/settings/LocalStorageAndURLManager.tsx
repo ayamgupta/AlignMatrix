@@ -12,23 +12,22 @@ export const globalSettingsUrlLocalStorageManager = (() =>{
 
   const writeParamsToUrlAndLocalstorage = (params: URLSearchParams) => {
     if(VALID_SAVE_PROP_KEYS !== undefined){
-      const urlParams =  new URLSearchParams( window.location.search );
+      // We no longer write settings back to the URL to keep it clean.
+      // Settings are preserved in local storage only.
+      // const urlParams =  new URLSearchParams( window.location.search );
       const localStorageParams = new URLSearchParams();
       //merge the new parameters, but don't touch those that aren't valid
       for(var i = 0; i < VALID_SAVE_PROP_KEYS.length; i++){
         const key = VALID_SAVE_PROP_KEYS[i];
         const newValue = params.get(key);
         if(newValue !== null){
-          urlParams.set(key, newValue);
+          // urlParams.set(key, newValue);
           localStorageParams.set(key, newValue);
-        }
-        else{
-          urlParams.delete(key);
         }
       }
 
       //write the complete parameter list to both the url and local storage
-      window.history.replaceState(null, "", `?${urlParams.toString()}`);
+      // window.history.replaceState(null, "", `?${urlParams.toString()}`);
       params.delete(ALIGNMENT_URL_KEY); //don't save to local storage
       localStorage.setItem( LOCALSTORAGE_KEY, localStorageParams.toString() );
     }
@@ -64,7 +63,31 @@ export const globalSettingsUrlLocalStorageManager = (() =>{
       writeParamsToUrlAndLocalstorage(getCurrentParams());
     },
     getAlignmentUrlParam: () => { //special case
-      return parametersOnLoad.get(ALIGNMENT_URL_KEY)
+      const resultsPath = parametersOnLoad.get("resultsPath");
+      if (resultsPath) {
+        return `/alignment-file?resultsPath=${encodeURIComponent(resultsPath)}`;
+      }
+      const url = parametersOnLoad.get(ALIGNMENT_URL_KEY);
+      if (url && url.includes("localhost:8000")) {
+        return url.replace(/^https?:\/\/localhost:8000/, "");
+      }
+      return url;
+    },
+    getAlignmentNameParam: () => { //special case
+      const name = parametersOnLoad.get("alignment-name");
+      if (name) return name;
+
+      const resultsPath = parametersOnLoad.get("resultsPath");
+      if (resultsPath) {
+        try {
+          const decoded = decodeURIComponent(resultsPath);
+          const lastSlash = Math.max(decoded.lastIndexOf("/"), decoded.lastIndexOf("\\"));
+          return decoded.substring(lastSlash + 1).split("?")[0];
+        } catch (e) {
+          return undefined;
+        }
+      }
+      return undefined;
     },
     getCurrentValue: (propName: string) => {
       return getCurrentParams().get(propName);

@@ -65,31 +65,37 @@ export class AlignmentLoader {
     errorCallback: (e: AlignmentLoadError) => void,
     alignmentName?: string
   ) {
-    let f: File;
-    try {
-      f = new File(
-        [await (await fetch(`${url}`)).blob()],
-        alignmentName ? alignmentName : url.substring(url.lastIndexOf("/") + 1)
-      );
-    } catch (e) {
-      console.error("Unable to load alignment by URL '" + url + "'", e);
-      errorCallback(
-        new AlignmentLoadError(
-          "Unable to fetch alignment in URL",
-          [{ name: "Browser-reported error message", message: (e as Error).message }],
-          "Possible causes: (1) The alignment is not sent using SSL or (2) the server that hosts " +
-            "the alignment has not enabled CORS. To be accessible to Alignment Viewer 2, the " +
-            "alignment must be served by HTTPS and the server must enable CORS."
-        )
-      );
-      return;
+    // Robust filename extraction
+    let finalName = alignmentName;
+    if (!finalName) {
+      try {
+        const parsedUrl = new URL(url, window.location.origin);
+        let nameSource = url;
+        
+        if (parsedUrl.searchParams.has("resultsPath")) {
+          nameSource = parsedUrl.searchParams.get("resultsPath") || url;
+        }
+
+        const decoded = decodeURIComponent(nameSource);
+        const lastSlash = Math.max(decoded.lastIndexOf("/"), decoded.lastIndexOf("\\"));
+        finalName = decoded.substring(lastSlash + 1).split("?")[0];
+        
+        if (!finalName || finalName === "alignment-file") {
+          finalName = decoded.split("/").pop()?.split("?")[0];
+        }
+      } catch (e) {
+        finalName = url.substring(url.lastIndexOf("/") + 1).split("?")[0];
+      }
     }
 
-    AlignmentLoader.loadAlignmentFromFile(
-      f,
+    // Start the worker path with the URL instead of waiting for a full blob
+    AlignmentLoader._loadViaWorker(
+      null,
       removeDuplicateSequences,
       callback,
-      errorCallback
+      errorCallback,
+      url,
+      finalName
     );
   }
 
@@ -142,10 +148,12 @@ export class AlignmentLoader {
   // -------------------------------------------------------------------------
 
   private static _loadViaWorker(
-    file: File,
+    file: File | null,
     removeDuplicateSequences: boolean,
     callback: (a: Alignment) => void,
-    errorCallback: (e: AlignmentLoadError) => void
+    errorCallback: (e: AlignmentLoadError) => void,
+    url?: string,
+    alignmentName?: string
   ) {
     let worker: Worker;
     try {
@@ -153,10 +161,14 @@ export class AlignmentLoader {
         new URL("../webworkers/AlignmentParserWorker.ts", import.meta.url)
       );
     } catch (e) {
-      console.warn("AlignmentLoader: Worker creation failed, falling back to FileReader.", e);
-      AlignmentLoader._loadViaFileReader(
-        file, removeDuplicateSequences, callback, errorCallback
-      );
+      if (file) {
+        console.warn("AlignmentLoader: Worker creation failed, falling back to FileReader.", e);
+        AlignmentLoader._loadViaFileReader(
+          file, removeDuplicateSequences, callback, errorCallback
+        );
+      } else {
+        errorCallback(new AlignmentLoadError("Worker not supported", []));
+      }
       return;
     }
 
@@ -193,9 +205,7 @@ export class AlignmentLoader {
       if (msg.type === "stats") {
         // Background stats are ready — update the alignment in place
         if (liveAlignment) {
-          (liveAlignment as any).positionalLetterCounts = new Map(msg.data.positionalLetterCounts);
-          (liveAlignment as any).globalAlphaLetterCounts = msg.data.globalAlphaLetterCounts;
-          (liveAlignment as any).consensus = msg.data.consensus;
+          liveAlignment.onStatsReady(msg.data);
           AlignmentLoader.onStatsReady?.(liveAlignment);
         }
         return;
@@ -204,15 +214,21 @@ export class AlignmentLoader {
       // "done" or "error" — parsing is complete
       if (msg.type === "done") {
         try {
-        const getSliceFn = (start: number, end: number, sortKey?: string) =>
+          const getSliceFn = (start: number, end: number, sortKey?: string) =>
             new Promise<{ sequences: string[]; annotations: any[] }>((resolve, reject) => {
               const requestId = nextRequestId++;
               pendingSlices.set(requestId, { resolve, reject });
               worker.postMessage({ type: "getSlice", start, end, requestId, sortKey: sortKey ?? "as-input" });
             });
 
-          liveAlignment = Alignment.fromWorkerMetadata(msg.data, getSliceFn);
-          callback(liveAlignment);
+          if (liveAlignment) {
+            // If we already have a live alignment (from partial loading), just update it
+            liveAlignment.onStatsReady(msg.data);
+            AlignmentLoader.onStatsReady?.(liveAlignment);
+          } else {
+            liveAlignment = Alignment.fromWorkerMetadata(msg.data, getSliceFn);
+            callback(liveAlignment);
+          }
         } catch (e) {
           worker.terminate();
           errorCallback(
@@ -222,7 +238,7 @@ export class AlignmentLoader {
           );
         }
         // NOTE: do NOT terminate — worker stays alive for slice requests + stats
-      } else {
+      } else if (msg.type === "error") {
         // error
         worker.terminate();
         errorCallback(
@@ -244,7 +260,7 @@ export class AlignmentLoader {
       );
     };
 
-    worker.postMessage({ type: "parse", file, removeDuplicateSequences });
+    worker.postMessage({ type: "parse", file, url, alignmentName, removeDuplicateSequences });
   }
 
   // -------------------------------------------------------------------------

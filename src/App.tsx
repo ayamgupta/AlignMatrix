@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.scss";
 import { downloadFullViewportSVG } from "./common/FileExporter"
 import { 
@@ -12,12 +12,17 @@ export default function App(){
   const triggerShowSearch = React.useRef<() => void | undefined>();
 
   //local state
-  const [state, setState] = useState({
-    showSettings: true,
-    mainViewportVisibleIdxs: undefined as undefined | {
-      seqIdxStart: number, seqIdxEnd: number,
-      posIdxStart: number, posIdxEnd: number
-    }
+  const [state, setState] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isAutoLoading = urlParams.has("resultsPath") || urlParams.has("alignment-url");
+    
+    return {
+      showSettings: !isAutoLoading,
+      mainViewportVisibleIdxs: undefined as undefined | {
+        seqIdxStart: number, seqIdxEnd: number,
+        posIdxStart: number, posIdxEnd: number
+      }
+    };
   });
 
   const {
@@ -25,18 +30,57 @@ export default function App(){
   } = state;
 
   const hideSettingsFn = useCallback(()=>{
-    setState({
-      ...state,
+    setState((prev) => ({
+      ...prev,
       showSettings: false
-    });
-  }, [
-    state
-  ]);
+    }));
+  }, []);
+
+  useMemo(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const resultsPath = urlParams.get("resultsPath");
+    
+    if (resultsPath) {
+      const fetchUrl = `/alignment-file?resultsPath=${encodeURIComponent(resultsPath)}`;
+      let updated = false;
+
+      // Ensure alignment-url matches resultsPath
+      if (urlParams.get("alignment-url") !== fetchUrl) {
+        urlParams.set("alignment-url", fetchUrl);
+        updated = true;
+      }
+
+      // Ensure alignment-name is extracted and set
+      try {
+        const decoded = decodeURIComponent(resultsPath);
+        const lastSlash = Math.max(decoded.lastIndexOf("/"), decoded.lastIndexOf("\\"));
+        const name = decoded.substring(lastSlash + 1).split("?")[0];
+        if (name && urlParams.get("alignment-name") !== name) {
+          urlParams.set("alignment-name", name);
+          updated = true;
+        }
+      } catch (e) {
+        // ignore errors
+      }
+
+      if (updated) {
+        window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
+      }
+    }
+  }, []);
 
   const settings = useAV2Settings({
     requestSettingsClose: hideSettingsFn,
     useUrlAndLocalstorage: true
   });
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("resultsPath")) {
+      // Auto-hide settings so it doesn't pop up over the loading screen
+      setState((prev) => ({ ...prev, showSettings: false }));
+    }
+  }, []);
 
   const {
     alignment,
@@ -53,7 +97,8 @@ export default function App(){
     showMinimap,
     sortBy,
     zoomLevel,
-    barplots
+    barplots,
+    statsVersion
   } = settings.currentlySelectedProperties;
 
   //const colorScheme = alignmentType === AlignmentTypes.AMINOACID
@@ -74,7 +119,8 @@ export default function App(){
     });
   }, [
     alignment,
-    barplots
+    barplots,
+    statsVersion
   ]);
 
   const renderedAlignment = useMemo(()=>{
@@ -84,6 +130,7 @@ export default function App(){
         <div className="app-content">
           <AlignmentViewer
             alignment={alignment}
+            statsVersion={statsVersion}
             alignmentType={alignmentType}
             aaColorScheme={aaColorScheme}
             ntColorScheme={ntColorScheme}
@@ -130,7 +177,8 @@ export default function App(){
     aaColorScheme,
     ntColorScheme,
     alignmentType,
-    zoomLevel
+    zoomLevel,
+    statsVersion
   ]);
 
   //
@@ -163,7 +211,7 @@ export default function App(){
     return (
       <>
         {settings.dropZoneElement}
-        <div style={{display: alignment && !showSettings ? "none" : undefined}}>
+        <div style={{display: (alignmentLoading || (alignment && !showSettings)) ? "none" : undefined}}>
           {settings.element}
         </div>
 
@@ -171,7 +219,7 @@ export default function App(){
           <div className="settings-box">
             <form>
               <div className="settings-header">
-                <h2>{`AlignMatrix`}</h2>
+                <h2>{`Alignment Viewer`}</h2>
 
                 <div className="settings-alignment-description">
                   {alignmentDescription}
@@ -300,95 +348,33 @@ export default function App(){
   
   return (
     <>
-      { renderedSettingsBox }
-      <div className={`fullscreen-loading-indicator ${alignmentLoading ? "" : "hidden"}`}>
-        <div className="loader" />
-        {loadingStatus && (
-          <div className="loading-status-text">{loadingStatus}</div>
+      { !alignmentLoading && renderedSettingsBox }
+      <div className={`fullscreen-loading-indicator ${alignmentLoading || settings.currentlySelectedProperties.alignmentLoadError ? "" : "hidden"}`}>
+        {settings.currentlySelectedProperties.alignmentLoadError ? (
+          <div className="error-container">
+            <h2 className="loading-title">Load Error</h2>
+            <div className="loading-status-text error-message">
+              {settings.currentlySelectedProperties.alignmentLoadError.message}
+            </div>
+            {settings.currentlySelectedProperties.alignmentLoadError.errors.map((err, i) => (
+              <div key={i} className="loading-status-text error-detail">
+                {err.message}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            <h2 className="loading-title">Alignment Viewer</h2>
+            <div className="modern-progress-container">
+              <div className="modern-progress-bar" />
+            </div>
+            {loadingStatus && (
+              <div className="loading-status-text">{loadingStatus}</div>
+            )}
+          </>
         )}
-        {
-          //spinners from https://github.com/n3r4zzurr0/svg-spinners
-        }
-        {
-          //<svg xmlns="http://www.w3.org/2000/svg" style={{margin: "auto", background: "#fff", display: "block"}} width="200px" height="200px" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">
-          //  <g transform="translate(20 20)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#e15b64">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.4s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(50 20)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#f47e60">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.3s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(80 20)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#f8b26a">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.2s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(20 50)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#f47e60">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.3s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(50 50)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#f8b26a">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.2s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(80 50)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#abbd81">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.1s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(20 80)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#f8b26a">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.2s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(50 80)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#abbd81">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="-0.1s"></animateTransform>
-          //    </rect></g>
-          //  <g transform="translate(80 80)">
-          //    <rect x="-15" y="-15" width="30" height="30" fill="#849b87">
-          //      <animateTransform attributeName="transform" type="scale" repeatCount="indefinite" calcMode="spline" dur="1s" values="1;1;0.2;1;1" keyTimes="0;0.2;0.5;0.8;1" keySplines="0.5 0.5 0.5 0.5;0 0.1 0.9 1;0.1 0 1 0.9;0.5 0.5 0.5 0.5" begin="0s"></animateTransform>
-          //    </rect></g>
-          //  </svg>
-        }
-        {
-          //<div className="spinner1">
-          //<div className="circleHolder">
-          //  <div className="circle1 spinner_b2T7z"/>
-          //</div>
-          //<div className="circleHolder">
-          //  <div className="circle2 spinner_b2T7z spinner_YRVVz"/>
-          //</div>
-          //<div className="circleHolder">
-          //  <div className="circle3 spinner_b2T7z spinner_c9oYz"/>
-          //</div>
-          //</div>
-        }
-        {
-          //<svg width="96" height="96" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          //  <circle className="spinner_b2T7" cx="4" cy="12" r="3"/>
-          //  <circle className="spinner_b2T7 spinner_YRVV" cx="12" cy="12" r="3"/>
-          //  <circle className="spinner_b2T7 spinner_c9oY" cx="20" cy="12" r="3"/>
-          //</svg>
-        }
-        {
-          //<svg 
-          //  width="96" 
-          //  height="96" 
-          //  viewBox="0 0 24 24"
-          //  xmlns="http://www.w3.org/2000/svg">
-          //  <rect className="spinner_zWVm" x="1" y="1" width="7.33" height="7.33"/>
-          //  <rect className="spinner_gfyD" x="8.33" y="1" width="7.33" height="7.33"/>
-          //  <rect className="spinner_T5JJ" x="1" y="8.33" width="7.33" height="7.33"/>
-          //  <rect className="spinner_E3Wz" x="15.66" y="1" width="7.33" height="7.33"/>
-          //  <rect className="spinner_g2vs" x="8.33" y="8.33" width="7.33" height="7.33"/>
-          //  <rect className="spinner_ctYB" x="1" y="15.66" width="7.33" height="7.33"/>
-          //  <rect className="spinner_BDNj" x="15.66" y="8.33" width="7.33" height="7.33"/>
-          //  <rect className="spinner_rCw3" x="8.33" y="15.66" width="7.33" height="7.33"/>
-          //  <rect className="spinner_Rszm" x="15.66" y="15.66" width="7.33" height="7.33"/>
-          //</svg>
-        }
       </div>
-      {/*renderedSettingsBox*/}
-      {renderedAlignment}
+      { !alignmentLoading && renderedAlignment }
     </>
   );
 };

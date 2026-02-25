@@ -36,13 +36,21 @@ body {
     position: fixed;
     inset: 0;
     background-color: white;
-    opacity: 0.8;
+    opacity: 1;
     z-index: 1901;
     display: grid;
     place-items: center;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
     align-content: center;
     gap: 16px;
+
+    .loading-title {
+      font-size: 24px;
+      font-weight: 500;
+      color: #333;
+      margin: 0;
+      margin-bottom: 8px;
+    }
 
     .loading-status-text {
       font-family: monospace;
@@ -51,134 +59,63 @@ body {
       text-align: center;
       max-width: 420px;
       padding: 0 16px;
-    }
-    
-    .loader {
-      border: 3px solid #f3f3f3; /* Light grey */
-      border-top: 3px solid #3498db; /* Blue */
-      border-radius: 50%;
-      width: 48px;
-      height: 48px;
-      animation: spin 2s linear infinite;
-      position: relative;
-    }
 
-    .spinner1{
-      width: 24px;
-      height: 24px;
-      position: relative;
-      display: grid;
-      grid-auto-flow: column;
-      place-items: center;
+      &.error-message {
+        color: #e74c3c;
+        font-size: 16px;
+        font-weight: bold;
+        margin-bottom: 8px;
+        font-family: inherit;
+      }
 
-      .circleHolder{
-        height: 25px;
-        width: 25px;
-        display: grid;
-        place-items: center;
-
-        .circle1, .circle2, .circle3{
-          height: 25px;
-          width: 25px;
-          background-color: black;
-          border-radius: 50%;
-          display: inline-block;
-        }
-
-        //spinner #1
-        .spinner_b2T7z{
-          animation:spinner_xe7Qz 0.8s linear infinite;
-        }
-        .spinner_YRVVz{
-          animation-delay:-.65s;
-        }
-        .spinner_c9oYz{
-          animation-delay:-.5s;
-        }
-        @keyframes spinner_xe7Qz{
-          100%{
-            height: 25px;
-            width: 25px;
-          }
-          50%{
-            height: 0px;
-            width: 0px;
-          }
-        }
+      &.error-detail {
+        color: #7f8c8d;
+        font-size: 12px;
       }
     }
 
-    //spinner #1
-    .spinner_b2T7{
-      animation:spinner_xe7Q .8s linear infinite
-    }
-    .spinner_YRVV{
-      animation-delay:-.65s
-    }
-    .spinner_c9oY{
-      animation-delay:-.5s
-    }
-    @keyframes spinner_xe7Q{
-      93.75%,100%{r:3px}46.875%{r:.2px}
+    .error-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+
+      .retry-button {
+        margin-top: 16px;
+        color: #3498db;
+        text-decoration: none;
+        font-weight: bold;
+      }
     }
 
-    //spinner #2
-    .spinner_zWVm{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_PnZo 1.2s linear infinite
+    .modern-progress-container {
+      width: 320px;
+      height: 3px;
+      background-color: #eee;
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
     }
-    .spinner_gfyD{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_4j7o 1.2s linear infinite;animation-delay:.1s
+
+    .modern-progress-bar {
+      width: 100%;
+      height: 100%;
+      background-color: #3498db;
+      position: absolute;
+      animation: progress-indeterminate 2s infinite ease-in-out;
+      transform-origin: 0% 50%;
     }
-    .spinner_T5JJ{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_fLK4 1.2s linear infinite;animation-delay:.1s
-    }
-    .spinner_E3Wz{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_tDji 1.2s linear infinite;animation-delay:.2s
-    }
-    .spinner_g2vs{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_CMiT 1.2s linear infinite;animation-delay:.2s
-    }
-    .spinner_ctYB{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_cHKR 1.2s linear infinite;animation-delay:.2s
-    }
-    .spinner_BDNj{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_Re6e 1.2s linear infinite;animation-delay:.3s
-    }
-    .spinner_rCw3{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_EJmJ 1.2s linear infinite;animation-delay:.3s
-    }
-    .spinner_Rszm{
-      animation:spinner_5QiW 1.2s linear infinite,spinner_YJOP 1.2s linear infinite;animation-delay:.4s
-    }
-    @keyframes spinner_5QiW{
-      0%,50%{width:7.33px;height:7.33px}25%{width:1.33px;height:1.33px}
-    }
-    @keyframes spinner_PnZo{
-      0%,50%{x:1px;y:1px}25%{x:4px;y:4px}
-    }
-    @keyframes spinner_4j7o{
-      0%,50%{x:8.33px;y:1px}25%{x:11.33px;y:4px}
-    }
-    @keyframes spinner_fLK4{
-      0%,50%{x:1px;y:8.33px}25%{x:4px;y:11.33px}
-    }
-    @keyframes spinner_tDji{
-      0%,50%{x:15.66px;y:1px}25%{x:18.66px;y:4px}
-    }
-    @keyframes spinner_CMiT{
-      0%,50%{x:8.33px;y:8.33px}25%{x:11.33px;y:11.33px}
-    }
-    @keyframes spinner_cHKR{
-      0%,50%{x:1px;y:15.66px}25%{x:4px;y:18.66px}
-    }
-    @keyframes spinner_Re6e{
-      0%,50%{x:15.66px;y:8.33px}25%{x:18.66px;y:11.33px}
-    }
-    @keyframes spinner_EJmJ{
-      0%,50%{x:8.33px;y:15.66px}25%{x:11.33px;y:18.66px}
-    }
-    @keyframes spinner_YJOP{
-      0%,50%{x:15.66px;y:15.66px}25%{x:18.66px;y:18.66px}
+
+    @keyframes progress-indeterminate {
+      0% {
+        transform: translateX(-100%) scaleX(0.2);
+      }
+      50% {
+        transform: translateX(0%) scaleX(0.5);
+      }
+      100% {
+        transform: translateX(100%) scaleX(0.2);
+      }
     }
   }
 
@@ -271,23 +208,3 @@ button.button-link {
   display: none;
 }
 
-.loader {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  border: 3px solid #f3f3f3; /* Light grey */
-  border-top: 3px solid #3498db; /* Blue */
-  border-radius: 50%;
-  width: 14px;
-  height: 14px;
-  animation: spin 2s linear infinite;
-}
-
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}

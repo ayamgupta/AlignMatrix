@@ -54,6 +54,15 @@ export interface IMiniMapProps {
 
   /** Pre-fetched sequences slice (used for large worker-backed alignments). */
   externalSequences?: string[];
+
+  /** The absolute row index of externalSequences[0] in the full alignment. */
+  externalSequencesOffset?: number;
+
+  /**
+   * Incremented whenever alignment statistics (consensus, sequence count) change.
+   * Triggers re-rendering during streaming.
+   */
+  statsVersion?: number;
 }
 
 //const blockgenerator = createMSABlockGenerator("canvas");
@@ -66,6 +75,7 @@ export function MiniMap(props: IMiniMapProps) {
     sortBy,
     alignmentType,
     externalSequences,
+    externalSequencesOffset = 0,
     aaColorScheme = AminoAcidColorSchemes.list[0],
     ntColorScheme = NucleotideColorSchemes.list[0],
     positionsToStyle,
@@ -406,6 +416,7 @@ export function MiniMap(props: IMiniMapProps) {
           positionY={
             -offsets.mmWorldOffsetPx// / scale
           }
+          sequencesRowOffset={externalSequencesOffset}
          />
       </div>
     )
@@ -420,7 +431,9 @@ export function MiniMap(props: IMiniMapProps) {
     offsets?.mmWorldOffsetPx,
     scale,
     sequences,
-    sortBy.key
+    sortBy.key,
+    externalSequencesOffset,
+    props.statsVersion
   ]);
 
   const renderedMinimapCanvasInteraction = useMemo(()=>{

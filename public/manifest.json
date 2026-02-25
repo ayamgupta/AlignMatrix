@@ -1,6 +1,6 @@
 {
-  "short_name": "AlignmentViewer2.0",
-  "name": "AlignmentViewer2.0 - a client side multiple sequence alignment viewer",
+  "short_name": "Alignment Viewer",
+  "name": "Alignment Viewer - a client side multiple sequence alignment viewer",
   "icons": [
     {
       "src": "favicon.ico",

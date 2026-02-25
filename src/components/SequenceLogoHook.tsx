@@ -53,6 +53,7 @@ export interface ISequenceLogoProps {
   //don't expose these props in AlignmentViewer
   svgId: string;
   alignment: Alignment;
+  statsVersion?: number;
   glyphWidth: number;
   alignmentType: AminoAcidAlignmentTypeInstance | NucleotideAlignmentTypeInstance;
   aaColorScheme?: AminoacidColorSchemeInstance;
@@ -159,7 +160,7 @@ export function SequenceLogo(props: ISequenceLogoProps) {
           .sort((a, b) => (a.frequency > b.frequency ? 1 : -1));
       }
     );
-  }, [alignment, alignmentType]);
+  }, [alignment, alignmentType, props.statsVersion]);
 
   /**
    * Generate the svg elements for a single position, i.e., column

@@ -584,6 +584,30 @@ export class Alignment {
   }
 
   /**
+   * Update the alignment with new statistics (consensus, counts, etc.) 
+   * while it is being loaded/streamed.
+   */
+  public onStatsReady(data: {
+    positionalLetterCounts?: [number, { [letter: string]: number }][];
+    globalAlphaLetterCounts?: { [letter: string]: number };
+    consensus?: ISequence;
+    sequenceCount?: number;
+  }) {
+    if (data.positionalLetterCounts) {
+      this.positionalLetterCounts = new Map(data.positionalLetterCounts);
+    }
+    if (data.globalAlphaLetterCounts) {
+      this.globalAlphaLetterCounts = data.globalAlphaLetterCounts;
+    }
+    if (data.consensus) {
+      this.consensus = data.consensus;
+    }
+    if (data.sequenceCount !== undefined) {
+      this.workerSequenceCount = data.sequenceCount;
+    }
+  }
+
+  /**
    * Get the frequencies of all letters in this alignment for each position.
    * @param normalize if true, will normalize the returned letter counts for each
    *                  position such that each sums to 1.

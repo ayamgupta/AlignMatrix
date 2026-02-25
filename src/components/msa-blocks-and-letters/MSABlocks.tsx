@@ -63,6 +63,7 @@ export interface MSABlocksProps {
    * Defaults to 0 (non-streaming mode).
    */
   sequencesRowOffset?: number;
+  statsVersion?: number;
 }
 
 export const MSABlocks = (props: MSABlocksProps) => {
@@ -127,7 +128,9 @@ export const MSABlocks = (props: MSABlocksProps) => {
     return [
       sequences.length,
       sequenceLength,
-      sequencesRowOffset,  // ← critical for streaming: different window = different canvas
+      sequencesRowOffset,
+      width,
+      height,
 
       //may add change query in the future.
       querySequence,
@@ -240,6 +243,7 @@ export const MSABlocks = (props: MSABlocksProps) => {
     querySequence,
     residueColoringToDraw,
     sequences,
+    props.statsVersion
   ]);
 
   //
