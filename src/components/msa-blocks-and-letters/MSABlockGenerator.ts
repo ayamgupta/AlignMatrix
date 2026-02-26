@@ -198,15 +198,22 @@ export function createMSABlockGenerator<
     ){
       function updateWebgl(app?: PIXI.Application<HTMLCanvasElement>){
         if(app){
-          app.stage.removeChildren();
+          // Destroy old children and their textures to prevent WebGL memory leaks
+          while(app.stage.children[0]) {
+            const child = app.stage.children[0] as PIXI.DisplayObject;
+            app.stage.removeChild(child);
+            child.destroy({ children: true, texture: true, baseTexture: true });
+          }
+
           app.stage.position.set(0, 0);
           app.stage.scale.set(1, 1);
 
           for(var idx=0; idx < data.tiles.length; idx++){
             const tile = data.tiles[idx];
-            const sprite = PIXI.Sprite.from(
+            const texture = PIXI.Texture.from(
               tile.image, { scaleMode: PIXI.SCALE_MODES.NEAREST }
             );
+            const sprite = new PIXI.Sprite(texture);
             sprite.interactiveChildren = false;
             sprite.x = tile.pixelX;
             sprite.y = tile.pixelY;

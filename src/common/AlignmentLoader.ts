@@ -54,6 +54,11 @@ export class AlignmentLoader {
    */
   public static onStatsReady: ((alignment: Alignment) => void) | undefined = undefined;
 
+  /**
+   * Called during a background sort operation to provide incremental results.
+   */
+  public static onSortUpdate: ((sortKey: string, progress: number, complete: boolean) => void) | undefined = undefined;
+
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
@@ -187,6 +192,11 @@ export class AlignmentLoader {
         | { type: "stats"; data: any }
         | { type: "slice"; requestId: number; sequences: string[]; annotations: any[] }
         | { type: "error"; name: string; message: string; errors?: any[]; possibleResolution?: string };
+
+      if (msg.type === "sortUpdate") {
+        AlignmentLoader.onSortUpdate?.(msg.sortKey, msg.progress, msg.complete);
+        return;
+      }
 
       if (msg.type === "progress") {
         AlignmentLoader.onProgress?.(msg.message);

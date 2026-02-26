@@ -1,9 +1,10 @@
 /**
- * This class conatins methods for sorting sequences
+ * This class contains methods for sorting sequences
  */
 import { IListOfPropObjects, IPropObjectInstanceInList } from "./GlobalEnumObject";
 import { Alignment, ISequence } from "./Alignment";
 import { BLOSUM62 } from "./BLOSUM";
+import { DEFAULT_ANNOTATION_FIELDS } from "./Annotations";
 
 
 export interface SequenceSorterInstance extends IPropObjectInstanceInList {
@@ -21,15 +22,12 @@ export const SequenceSorter = (() => {
   //
   //
   function hammingDistance(seq1: ISequence, seq2: ISequence) {
-    const minLength =
-      seq1.sequence.length < seq2.sequence.length
-        ? seq1.sequence.length
-        : seq2.sequence.length;
-    //if they are not the same length, those extra positions in one
-    //sequence count as differences to the other sequence
-    let distance = Math.abs(seq1.sequence.length - seq2.sequence.length);
+    const s1 = seq1.sequence;
+    const s2 = seq2.sequence;
+    const minLength = Math.min(s1.length, s2.length);
+    let distance = Math.abs(s1.length - s2.length);
     for (var i = 0; i < minLength; i++) {
-      if (seq1.sequence[i] !== seq2.sequence[i]) {
+      if (s1[i] !== s2[i]) {
         distance += 1;
       }
     }
@@ -37,21 +35,18 @@ export const SequenceSorter = (() => {
   }
 
   function blosumScore(seq1: ISequence, seq2: ISequence) {
-    const minLength =
-      seq1.sequence.length < seq2.sequence.length
-        ? seq1.sequence.length
-        : seq2.sequence.length;
+    const s1 = seq1.sequence;
+    const s2 = seq2.sequence;
+    const minLength = Math.min(s1.length, s2.length);
     let score = 0;
     for (var i = 0; i < minLength; i++) {
+      const a = s1[i];
+      const b = s2[i];
       if (
-        BLOSUM62.has(seq1.sequence[i]) &&
-        BLOSUM62.get(seq1.sequence[i])!.has(seq2.sequence[i])
+        BLOSUM62.has(a) &&
+        BLOSUM62.get(a)!.has(b)
       ) {
-        score += BLOSUM62.get(seq1.sequence[i])!.get(seq2.sequence[i])!;
-      } else {
-        //one or both letters are not in the blosum alignment. Occurs when
-        //there are lower case letters or gaps.
-        //TODO: is counting as zero the correct way to handle this?
+        score += BLOSUM62.get(a)!.get(b)!;
       }
     }
     return score;
@@ -72,18 +67,42 @@ export const SequenceSorter = (() => {
       sortFn: (sequencesAsInput, alignment) => sequencesAsInput
      } satisfies SequenceSorterInstance,
     
+    ID: {
+      key: "id",
+      description: "Sequence ID",
+      targetAlignmentType: "both",
+      sortFn: (sequences, alignment) => {
+        return [...sequences].sort((a, b) => 
+          a.annotations[DEFAULT_ANNOTATION_FIELDS.ID].localeCompare(b.annotations[DEFAULT_ANNOTATION_FIELDS.ID])
+        );
+      }
+    } satisfies SequenceSorterInstance,
+
+    GAPS: {
+      key: "gaps",
+      description: "Number of gaps",
+      targetAlignmentType: "both",
+      sortFn: (sequences, alignment) => {
+        return [...sequences].sort((a, b) => 
+          ((a.annotations[DEFAULT_ANNOTATION_FIELDS.INTERNAL_GAP_COUNT] as number) || 0) - 
+          ((b.annotations[DEFAULT_ANNOTATION_FIELDS.INTERNAL_GAP_COUNT] as number) || 0)
+        );
+      }
+    } satisfies SequenceSorterInstance,
+
     HAMMING_DIST_QUERY: {
       key: "hamming-dist-to-query",
       description: "Hamming distance to query sequence",
       targetAlignmentType: "both",
       sortFn: (sequences, alignment) => {
           const querySeq = alignment.getQuery();
-          return sequences
-            .map((s) => s) //copy list
+          const distMap = new Map<ISequence, number>();
+          for(const seq of sequences) {
+            distMap.set(seq, hammingDistance(querySeq, seq));
+          }
+          return [...sequences]
             .sort((seq1, seq2) => {
-              const dist1 = hammingDistance(querySeq, seq1);
-              const dist2 = hammingDistance(querySeq, seq2);
-              return dist1 - dist2;
+              return distMap.get(seq1)! - distMap.get(seq2)!;
             });
         }
     } satisfies SequenceSorterInstance,
@@ -94,12 +113,13 @@ export const SequenceSorter = (() => {
       targetAlignmentType: "both",
       sortFn: (sequences, alignment) => {
         const consensusSeq = alignment.getConsensus();
-        return sequences
-          .map((s) => s)
+        const distMap = new Map<ISequence, number>();
+        for(const seq of sequences) {
+          distMap.set(seq, hammingDistance(consensusSeq, seq));
+        }
+        return [...sequences]
           .sort((seq1, seq2) => {
-            const dist1 = hammingDistance(consensusSeq, seq1);
-            const dist2 = hammingDistance(consensusSeq, seq2);
-            return dist1 - dist2;
+            return distMap.get(seq1)! - distMap.get(seq2)!;
           });
         }
     } satisfies SequenceSorterInstance,
@@ -110,12 +130,13 @@ export const SequenceSorter = (() => {
       targetAlignmentType: "aminoacid",
       sortFn: (sequences, alignment) => {
         const querySeq = alignment.getQuery();
-        return sequences
-          .map((s) => s)
+        const scoreMap = new Map<ISequence, number>();
+        for(const seq of sequences) {
+          scoreMap.set(seq, blosumScore(querySeq, seq));
+        }
+        return [...sequences]
           .sort((seq1, seq2) => {
-            const dist1 = blosumScore(querySeq, seq1);
-            const dist2 = blosumScore(querySeq, seq2);
-            return dist2 - dist1; //reverse from distance
+            return scoreMap.get(seq2)! - scoreMap.get(seq1)!; //reverse from distance
           });
         }
     } satisfies SequenceSorterInstance,
@@ -126,12 +147,13 @@ export const SequenceSorter = (() => {
       targetAlignmentType: "aminoacid",
       sortFn: (sequences, alignment) => {
         const consensusSeq = alignment.getConsensus();
-        return sequences
-          .map((s) => s)
+        const scoreMap = new Map<ISequence, number>();
+        for(const seq of sequences) {
+          scoreMap.set(seq, blosumScore(consensusSeq, seq));
+        }
+        return [...sequences]
           .sort((seq1, seq2) => {
-            const dist1 = blosumScore(consensusSeq, seq1);
-            const dist2 = blosumScore(consensusSeq, seq2);
-            return dist2 - dist1; //reverse from distance
+            return scoreMap.get(seq2)! - scoreMap.get(seq1)!; //reverse from distance
           });
         }
     } satisfies SequenceSorterInstance,
@@ -144,34 +166,19 @@ export const SequenceSorter = (() => {
   // 
   const propListObj = IListOfPropObjects(Object.values(propList));
 
-  const aminoAcidSorters = propListObj.list.reduce((
-    acc, seqSort
-  ) => {
-    if (
-      (seqSort as SequenceSorterInstance).targetAlignmentType === "aminoacid" ||
-      (seqSort as SequenceSorterInstance).targetAlignmentType === "both"
-    ) {
-      acc.push(seqSort as SequenceSorterInstance);
-    }
-    return acc;
-  }, [] as SequenceSorterInstance[]);
+  const aminoAcidSorters = propListObj.list.filter(seqSort => 
+    seqSort.targetAlignmentType === "aminoacid" || seqSort.targetAlignmentType === "both"
+  );
 
-  const nucleotideSorters = propListObj.list.reduce((
-    acc, seqSort
-  ) => {
-    if (
-      (seqSort as SequenceSorterInstance).targetAlignmentType === "nucleotide" ||
-      (seqSort as SequenceSorterInstance).targetAlignmentType === "both"
-    ) {
-      acc.push(seqSort as SequenceSorterInstance);
-    }
-    return acc;
-  }, [] as SequenceSorterInstance[]);
+  const nucleotideSorters = propListObj.list.filter(seqSort => 
+    seqSort.targetAlignmentType === "nucleotide" || seqSort.targetAlignmentType === "both"
+  );
 
   return {
     ALL_AMINO_ACID_SORTERS: aminoAcidSorters,
     ALL_NUCLEOTIDE_SORTERS: nucleotideSorters,
     ...propList,
-    ...IListOfPropObjects<SequenceSorterInstance>(Object.values(propList))
+    ...propListObj,
+    list: propListObj.list
   };
 })();
