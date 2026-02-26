@@ -222,6 +222,9 @@ export default function App(){
                  : `${"\u2605"} contains ${alignment.getNumberDuplicateSequencesInAlignment()} duplicate sequences`}
              </span>
            ) : null}
+           <span className={`streaming-status ${alignment.isStreamingComplete() ? "complete" : "streaming"}`}>
+             {alignment.isStreamingComplete() ? "Complete" : "Loading..."}
+           </span>
         </h4>
       </>
     ) : (

@@ -135,6 +135,7 @@ export class Alignment {
   private consensus: ISequence;
   private allRepresentedCharacters: string[];
   private annotationFields: Record<string, {key: string, name: string}>;
+  private isFullyLoaded: boolean = false;
 
   /**
    * When the alignment was created from worker metadata (large-file mode),
@@ -592,6 +593,7 @@ export class Alignment {
     globalAlphaLetterCounts?: { [letter: string]: number };
     consensus?: ISequence;
     sequenceCount?: number;
+    isComplete?: boolean;
   }) {
     if (data.positionalLetterCounts) {
       this.positionalLetterCounts = new Map(data.positionalLetterCounts);
@@ -605,6 +607,17 @@ export class Alignment {
     if (data.sequenceCount !== undefined) {
       this.workerSequenceCount = data.sequenceCount;
     }
+    if (data.isComplete !== undefined) {
+      this.isFullyLoaded = data.isComplete;
+    }
+  }
+
+  /**
+   * Returns true if the alignment is fully loaded (not currently streaming).
+   */
+  public isStreamingComplete(): boolean {
+    if (this.getSlice === undefined) return true; // Standard RAM mode is always complete
+    return this.isFullyLoaded;
   }
 
   /**

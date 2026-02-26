@@ -163,6 +163,26 @@ body {
           }
           h4 {
             margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+        }
+
+        .streaming-status {
+          font-size: 9px;
+          padding: 1px 6px;
+          border-radius: 8px;
+          text-transform: uppercase;
+          font-weight: bold;
+          
+          &.streaming {
+            background-color: #f1c40f;
+            color: #000;
+          }
+          &.complete {
+            background-color: #2ecc71;
+            color: #fff;
           }
         }
 

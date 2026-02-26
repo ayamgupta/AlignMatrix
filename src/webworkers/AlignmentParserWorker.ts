@@ -597,7 +597,7 @@ self.onmessage = async (event) => {
 
     _storage.flush();
     const finalStats = getPartialStats();
-    self.postMessage({ type: "done", data: buildQuickMetadata(fileName, removeDuplicateSequences, finalStats) });
+    self.postMessage({ type: "done", data: { ...buildQuickMetadata(fileName, removeDuplicateSequences, finalStats), isComplete: true } });
     _querySequence = _storage.get(0).sequence;
     _consensusSequence = finalStats?.consensus.sequence ?? _querySequence;
 
