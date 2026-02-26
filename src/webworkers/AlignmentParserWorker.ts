@@ -218,14 +218,39 @@ let _consensusSequence: string = "";
 
 // ---- sorting logic ---------------------------------------------------------
 
-const BLOSUM62_BYTES = new Int8Array(128 * 128);
+const BLOSUM62_BYTES = new Int8Array(128 * 128).fill(-128);
 (function initializeBlosum() {
-  const codes = "ARNDCQEGHILKMFPSTWYV";
-  const scores = [[4,-1,-2,-2,0,-1,-1,0,-2,-1,-1,-1,-1,-2,-1,1,0,-3,-2,0],[-1,5,0,-2,-3,1,0,-2,0,-3,-2,2,-1,-3,-2,-1,-1,-3,-2,-3],[-2,0,6,1,-3,0,0,0,1,-3,-3,0,-2,-3,-2,1,0,-4,-2,-3],[-2,-2,1,6,-3,0,2,-1,-1,-3,-4,-1,-3,-3,-1,0,-1,-4,-3,-3],[0,-3,-3,-3,9,-3,-4,-3,-3,-1,-1,-3,-1,-2,-3,-1,-1,-2,-2,-1],[-1,1,0,0,-3,5,2,-2,0,-3,-2,1,0,-3,-1,0,-1,-2,-1,-2],[-1,0,0,2,-4,2,5,-2,0,-3,-3,1,-2,-3,-1,0,-1,-3,-2,-2],[0,-2,0,-1,-3,-2,-2,6,-2,-4,-4,-2,-3,-3,-2,0,-2,-2,-3,-3],[-2,0,1,-1,-3,0,0,-2,8,-3,-3,-1,-2,-1,-2,-1,-2,-2,2,-3],[-1,-3,-3,-3,-1,-3,-3,-4,-3,4,2,-3,1,0,-3,-1,1,-3,-1,3],[-1,-2,-3,-4,-1,-2,-3,-4,-3,2,4,-2,2,0,-3,-2,-1,-2,-1,1],[-1,2,0,-1,-3,1,1,-2,-1,-3,-2,5,-1,-3,-1,0,-1,-3,-2,-2],[-1,-1,-2,-3,-1,0,-2,-3,-2,1,2,-1,5,0,-2,-1,-1,-1,-1,1],[-2,-3,-3,-3,-2,-3,-3,-3,-1,0,0,-3,0,6,-3,-2,-2,1,3,-1],[-1,-2,-2,-1,-3,-1,-1,-2,-2,-3,-3,-1,-2,-3,7,-1,-1,-4,-3,-2],[1,-1,1,0,-1,0,0,0,-1,-1,-2,0,-1,-2,-1,4,1,-3,-2,0],[0,-1,0,-1,-1,-1,-1,-2,-2,1,-1,-1,-1,-2,-1,1,5,-2,-2,0],[-3,-3,-4,-4,-2,-2,-3,-2,-2,-3,-2,-3,-1,1,-4,-3,-2,11,2,-3],[-2,-2,-2,-3,-2,-1,-2,-3,2,-1,-1,-2,-1,3,-3,-2,-2,2,7,-1],[0,-3,-3,-3,-1,-2,-2,-3,-3,3,1,-2,1,-1,-2,0,0,-3,-1,4]];
+  const codes = "ARNDCQEGHILKMFPSTWYVBZX*";
+  const scores = [
+    [ 4,-1,-2,-2, 0,-1,-1, 0,-2,-1,-1,-1,-1,-2,-1, 1, 0,-3,-2, 0,-2,-1, 0,-4], // A
+    [-1, 5, 0,-2,-3, 1, 0,-2, 0,-3,-2, 2,-1,-3,-2,-1,-1,-3,-2,-3,-1, 0,-1,-4], // R
+    [-2, 0, 6, 1,-3, 0, 0, 0, 1,-3,-3, 0,-2,-3,-2, 1, 0,-4,-2,-3, 3, 0,-1,-4], // N
+    [-2,-2, 1, 6,-3, 0, 2,-1,-1,-3,-4,-1,-3,-3,-1, 0,-1,-4,-3,-3, 4, 1,-1,-4], // D
+    [ 0,-3,-3,-3, 9,-3,-4,-3,-3,-1,-1,-3,-1,-2,-3,-1,-1,-2,-2,-1,-3,-3,-2,-4], // C
+    [-1, 1, 0, 0,-3, 5, 2,-2, 0,-3,-2, 1, 0,-3,-1, 0,-1,-2,-1,-2, 0, 3,-1,-4], // Q
+    [-1, 0, 0, 2,-4, 2, 5,-2, 0,-3,-3, 1,-2,-3,-1, 0,-1,-3,-2,-2, 1, 4,-1,-4], // E
+    [ 0,-2, 0,-1,-3,-2,-2, 6,-2,-4,-4,-2,-3,-3,-2, 0,-2,-2,-3,-3,-1,-2,-1,-4], // G
+    [-2, 0, 1,-1,-3, 0, 0,-2, 8,-3,-3,-1,-2,-1,-2,-1,-2,-2, 2,-3, 0, 0,-1,-4], // H
+    [-1,-3,-3,-3,-1,-3,-3,-4,-3, 4, 2,-3, 1, 0,-3,-2,-1,-3,-1, 3,-3,-3,-1,-4], // I
+    [-1,-2,-3,-4,-1,-2,-3,-4,-3, 2, 4,-2, 2, 0,-3,-2,-1,-2,-1, 1,-4,-3,-1,-4], // L
+    [-1, 2, 0,-1,-3, 1, 1,-2,-1,-3,-2, 5,-1,-3,-1, 0,-1,-3,-2,-2, 0, 1,-1,-4], // K
+    [-1,-1,-2,-3,-1, 0,-2,-3,-2, 1, 2,-1, 5, 0,-2,-1,-1,-1,-1, 1,-3,-1,-1,-4], // M
+    [-2,-3,-3,-3,-2,-3,-3,-3,-1, 0, 0,-3, 0, 6,-4,-2,-2, 1, 3,-1,-3,-3,-1,-4], // F
+    [-1,-2,-2,-1,-3,-1,-1,-2,-2,-3,-3,-1,-2,-4, 7,-1,-1,-4,-3,-2,-2,-1,-2,-4], // P
+    [ 1,-1, 1, 0,-1, 0, 0, 0,-1,-2,-2, 0,-1,-2,-1, 4, 1,-3,-2,-2, 0, 0, 0,-4], // S
+    [ 0,-1, 0,-1,-1,-1,-1,-2,-2,-1,-1,-1,-1,-2,-1, 1, 5,-2,-2, 0,-1,-1, 0,-4], // T
+    [-3,-3,-4,-4,-2,-2,-3,-2,-2,-3,-2,-3,-1, 1,-4,-3,-2,11, 2,-3,-4,-3,-2,-4], // W
+    [-2,-2,-2,-3,-2,-1,-2,-3, 2,-1,-1,-2,-1, 3,-3,-2,-2, 2, 7,-1,-3,-2,-1,-4], // Y
+    [ 0,-3,-3,-3,-1,-2,-2,-3,-3, 3, 1,-2, 1,-1,-2,-2, 0,-3,-1, 4,-3,-2,-1,-4], // V
+    [-2,-1, 3, 4,-3, 0, 1,-1, 0,-3,-4, 0,-3,-3,-2, 0,-1,-4,-3,-3, 4, 1,-1,-4], // B
+    [-1, 0, 0, 1,-3, 3, 4,-2, 0,-3,-3, 1,-1,-3,-1, 0,-1,-3,-2,-2, 1, 4,-1,-4], // Z
+    [ 0,-1,-1,-1,-2,-1,-1,-1,-1,-1,-1,-1,-1,-1,-2, 0, 0,-2,-1,-1,-1,-1,-1,-4], // X
+    [-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4,-4, 1], // *
+  ];
   for (let i = 0; i < codes.length; i++) {
     for (let j = 0; j < codes.length; j++) {
       const cI = codes.charCodeAt(i); const cJ = codes.charCodeAt(j);
-      BLOSUM62_BYTES[cI * 128 + cJ] = scores[i][j]; BLOSUM62_BYTES[(cI+32)*128+cJ]=scores[i][j]; BLOSUM62_BYTES[cI*128+(cJ+32)]=scores[i][j]; BLOSUM62_BYTES[(cI+32)*128+(cJ+32)]=scores[i][j];
+      BLOSUM62_BYTES[cI * 128 + cJ] = scores[i][j]; 
     }
   }
 })();
@@ -279,24 +304,44 @@ function runSortStep() {
     
     if (_currentSort.isBlosum) {
       let s = 0; const min = Math.min(len, targetLen);
-      for (let k = 0; k < min; k++) { const a = seq[k]; if (a < 128) s += BLOSUM62_BYTES[targetShifts[k] | a]; }
+      for (let k = 0; k < min; k++) { 
+        const a = seq[k]; 
+        const b = target[k];
+        if (a < 128 && b < 128) {
+          const score = BLOSUM62_BYTES[b * 128 + a];
+          if (score !== -128) s += score;
+        }
+      }
       scores[i] = s;
     } else {
       // Bit-Packed Hamming optimization
       let d = Math.abs(len - targetLen); const min = Math.min(len, targetLen);
-      const minAligned = min & ~3;
-      const s32 = new Uint32Array(seq.buffer, seq.byteOffset, minAligned >> 2);
-      const t32 = new Uint32Array(target.buffer, target.byteOffset, minAligned >> 2);
-      for (let k = 0; k < s32.length; k++) {
-        const x = s32[k] ^ t32[k];
-        if (x !== 0) { 
-          if (x & 0xFF) d++; 
-          if (x & 0xFF00) d++; 
-          if (x & 0xFF0000) d++; 
-          if (x & 0xFF000000) d++; 
+      
+      let isUnaligned = (seq.byteOffset % 4 !== 0 || target.byteOffset % 4 !== 0);
+      
+      if (!isUnaligned) {
+        const minAligned = min & ~3;
+        const s32 = new Uint32Array(seq.buffer, seq.byteOffset, minAligned >> 2);
+        const t32 = new Uint32Array(target.buffer, target.byteOffset, minAligned >> 2);
+        for (let k = 0; k < s32.length; k++) {
+          const x = s32[k] ^ t32[k];
+          if (x !== 0) { 
+            // Case-sensitive exact match check
+            if (x & 0xFF) d++; 
+            if (x & 0xFF00) d++; 
+            if (x & 0xFF0000) d++; 
+            if (x & 0xFF000000) d++; 
+          }
+        }
+        for (let k = minAligned; k < min; k++) {
+          if (seq[k] !== target[k]) d++;
+        }
+      } else {
+        // Fallback for unaligned memory
+        for (let k = 0; k < min; k++) {
+          if (seq[k] !== target[k]) d++;
         }
       }
-      for (let k = minAligned; k < min; k++) if (seq[k] !== target[k]) d++;
       scores[i] = d;
     }
   }
@@ -548,9 +593,33 @@ self.onmessage = async (event) => {
       for (let ci = 0; ci < numChars; ci++) {
         if (runningGlobalCounts[ci] > 0) globalAlphaLetterCounts[idxToChar[ci]] = runningGlobalCounts[ci];
       }
-      const consensusSeq = positionalLetterCounts.map(([, lc]) => 
-        Object.entries(lc).sort((a,b) => b[1] - a[1])[0]?.[0] ?? "-"
-      ).join("");
+      const consensusSeq = positionalLetterCounts.map(([, letterCounts]) => {
+        return Object.entries(letterCounts)
+          .sort((letterA, letterB) => {
+            const aIsLowerAlpha = letterA[0].match(/[a-z]/) ? true : false;
+            const aIsUpperAlpha = letterA[0].match(/[A-Z]/) ? true : false;
+            const bIsLowerAlpha = letterB[0].match(/[a-z]/) ? true : false;
+            const bIsUpperAlpha = letterB[0].match(/[A-Z]/) ? true : false;
+
+            if (
+              aIsLowerAlpha === bIsLowerAlpha &&
+              aIsUpperAlpha === bIsUpperAlpha
+            ) {
+              return letterB[1] - letterA[1];
+            }
+
+            return aIsUpperAlpha
+              ? -1
+              : bIsUpperAlpha
+              ? 1
+              : aIsLowerAlpha
+              ? -1
+              : bIsLowerAlpha
+              ? 1
+              : 0;
+          })
+          .map((letter) => letter[0])[0];
+      }).join("");
       return { positionalLetterCounts, globalAlphaLetterCounts, consensus: { annotations: {}, sequence: consensusSeq } };
     };
 
@@ -597,9 +666,14 @@ self.onmessage = async (event) => {
 
     _storage.flush();
     const finalStats = getPartialStats();
-    self.postMessage({ type: "done", data: { ...buildQuickMetadata(fileName, removeDuplicateSequences, finalStats), isComplete: true } });
     _querySequence = _storage.get(0).sequence;
     _consensusSequence = finalStats?.consensus.sequence ?? _querySequence;
+
+    // Clear consensus-dependent sorts so they re-trigger with final consensus if requested
+    _sortedIndicesCache.delete("hamming-dist-to-consensus");
+    _sortedIndicesCache.delete("blosum-score-to-consensus");
+
+    self.postMessage({ type: "done", data: { ...buildQuickMetadata(fileName, removeDuplicateSequences, finalStats), isComplete: true } });
 
   } catch (e: any) {
     self.postMessage({
