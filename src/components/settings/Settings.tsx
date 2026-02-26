@@ -39,11 +39,7 @@ import {
     IPositionalBarplotDataSeries,
     PreconfiguredPositionalBarplots,
 } from "../PositionalBarplotHook";
-import {
-    AlignmentExampleFile,
-    AlignmentFileDrop,
-    AlignmentFileLoader,
-} from "../AlignmentFileLoaderHook";
+import { AlignmentFileDrop } from "../AlignmentFileLoaderHook";
 import { Alignment } from "../../common/Alignment";
 
 export interface ISettingsState {
@@ -105,7 +101,7 @@ export default function useAV2Settings(props: {
                 PreconfiguredPositionalBarplots.Gaps,
             ] as IPositionalBarplotDataSeries[],
 
-            showMinimap: true,
+            showMinimap: false,
             showAnnotations: true,
             showLogo: true,
             removeDuplicateSequences: true,
@@ -560,6 +556,15 @@ export default function useAV2Settings(props: {
                         ]),
                     );
                 }
+            } else {
+                onAlignmentLoadError(
+                    new AlignmentLoadError("Alignment not provided", [
+                        {
+                            name: "Missing Parameter",
+                            message: "resultsPath not provided in URL.",
+                        },
+                    ]),
+                );
             }
         }
     }, [
@@ -815,7 +820,7 @@ export default function useAV2Settings(props: {
                                     alt="Close Search Box"
                                     width="16"
                                     height="16"
-                                    src={`${process.env.PUBLIC_URL}/close.svg`}
+                                    src={`./close.svg`}
                                 />
                             </button>
                         </div>

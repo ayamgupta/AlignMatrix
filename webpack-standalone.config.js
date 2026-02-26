@@ -8,7 +8,7 @@ const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 module.exports = {
   entry: "./dist/js/index.js",
   output: {
-    library: "AlignmentViewer2",
+    library: "AlignmentViewer",
     libraryTarget: "umd",
     filename: "standalone/alignmentviewer.js",
     path: path.resolve(__dirname, "dist"),

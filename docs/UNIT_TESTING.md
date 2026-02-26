@@ -1,4 +1,4 @@
-# Testing For AlignmentViewer 2.0
+# Testing For Alignment Viewer
 
 We are using [Jest](https://facebook.github.io/jest) as our unit testing framework our choice.
 

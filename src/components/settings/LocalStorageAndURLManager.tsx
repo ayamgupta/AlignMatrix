@@ -2,376 +2,381 @@ import "./Settings.scss";
 import { IPropObjectInstanceInList } from "../../common/GlobalEnumObject";
 import React, { useCallback, useMemo, useRef } from "react";
 
-import Select, { MultiValue } from 'react-select'
+import Select, { MultiValue } from "react-select";
 
-export const globalSettingsUrlLocalStorageManager = (() =>{
-  let initialized = false;
-  const LOCALSTORAGE_KEY = "AV2_UI_SETTINGS_CACHE";
-  const ALIGNMENT_URL_KEY = "alignment-url";
-  let VALID_SAVE_PROP_KEYS: string[] | undefined = undefined;
+export const globalSettingsUrlLocalStorageManager = (() => {
+    let initialized = false;
+    const LOCALSTORAGE_KEY = "AV2_UI_SETTINGS_CACHE";
+    const ALIGNMENT_URL_KEY = "alignment-url";
+    let VALID_SAVE_PROP_KEYS: string[] | undefined = undefined;
 
-  const writeParamsToUrlAndLocalstorage = (params: URLSearchParams) => {
-    if(VALID_SAVE_PROP_KEYS !== undefined){
-      // We no longer write settings back to the URL to keep it clean.
-      // Settings are preserved in local storage only.
-      // const urlParams =  new URLSearchParams( window.location.search );
-      const localStorageParams = new URLSearchParams();
-      //merge the new parameters, but don't touch those that aren't valid
-      for(var i = 0; i < VALID_SAVE_PROP_KEYS.length; i++){
-        const key = VALID_SAVE_PROP_KEYS[i];
-        const newValue = params.get(key);
-        if(newValue !== null){
-          // urlParams.set(key, newValue);
-          localStorageParams.set(key, newValue);
+    const writeParamsToUrlAndLocalstorage = (params: URLSearchParams) => {
+        if (VALID_SAVE_PROP_KEYS !== undefined) {
+            // We no longer write settings back to the URL to keep it clean.
+            // Settings are preserved in local storage only.
+            // const urlParams =  new URLSearchParams( window.location.search );
+            const localStorageParams = new URLSearchParams();
+            //merge the new parameters, but don't touch those that aren't valid
+            for (var i = 0; i < VALID_SAVE_PROP_KEYS.length; i++) {
+                const key = VALID_SAVE_PROP_KEYS[i];
+                const newValue = params.get(key);
+                if (newValue !== null) {
+                    // urlParams.set(key, newValue);
+                    localStorageParams.set(key, newValue);
+                }
+            }
+
+            //write the complete parameter list to both the url and local storage
+            // window.history.replaceState(null, "", `?${urlParams.toString()}`);
+            params.delete(ALIGNMENT_URL_KEY); //don't save to local storage
+            localStorage.setItem(
+                LOCALSTORAGE_KEY,
+                localStorageParams.toString(),
+            );
         }
-      }
+    };
 
-      //write the complete parameter list to both the url and local storage
-      // window.history.replaceState(null, "", `?${urlParams.toString()}`);
-      params.delete(ALIGNMENT_URL_KEY); //don't save to local storage
-      localStorage.setItem( LOCALSTORAGE_KEY, localStorageParams.toString() );
-    }
-  }
-
-  const getCurrentParams = (dontInitialize?: boolean) => {
-    const urlSearchParams = new URLSearchParams( window.location.search )
-    const localStorageParams = new URLSearchParams(
-      localStorage.getItem(LOCALSTORAGE_KEY)
-        ? localStorage.getItem(LOCALSTORAGE_KEY)!
-        : undefined
-    );
-    for (const [key, value] of urlSearchParams) { // URL trumps local storage
-      localStorageParams.set(key, value);
-    }
-    if(!initialized && !dontInitialize){
-      //we don't want to write to the URL / local storage if the
-      //caller isn't using URL/local storage, so do not write on the
-      //initial call.
-      initialized = true;
-      writeParamsToUrlAndLocalstorage(localStorageParams);
-    }
-    return localStorageParams;
-  }
-  //set the startup parameter set, but don't sync the url/local storage
-  //until a real caller requests these data.
-  const parametersOnLoad = getCurrentParams(true);
-
-  return {
-    setValidSavePropKeys: (keys: string[]) => {
-      //required before any writing occurs
-      VALID_SAVE_PROP_KEYS = keys;
-      writeParamsToUrlAndLocalstorage(getCurrentParams());
-    },
-    getAlignmentUrlParam: () => { //special case
-      const urlSearchParams = new URLSearchParams(window.location.search);
-      const resultsPath = urlSearchParams.get("resultsPath");
-      const isRootWithoutParams = window.location.pathname === "/" && window.location.search === "";
-
-      if (resultsPath || isRootWithoutParams) {
-        const baseUrl = `http://localhost:8000/alignment-file`;
-        return resultsPath ? `${baseUrl}?resultsPath=${encodeURIComponent(resultsPath)}` : baseUrl;
-      }
-      const url = parametersOnLoad.get(ALIGNMENT_URL_KEY);
-      if (url && url.includes("localhost:8000")) {
-        return url.replace(/^https?:\/\/localhost:8000/, "");
-      }
-      return url;
-    },
-    getAlignmentNameParam: () => { //special case
-      const urlSearchParams = new URLSearchParams(window.location.search);
-      const name = urlSearchParams.get("alignment-name");
-      if (name) return name;
-
-      const resultsPath = urlSearchParams.get("resultsPath");
-      const isRootWithoutParams = window.location.pathname === "/" && window.location.search === "";
-
-      if (resultsPath || isRootWithoutParams) {
-        try {
-          const decoded = decodeURIComponent(resultsPath || "");
-          if (!decoded) {
-            return "alignment-file";
-          }
-          const lastSlash = Math.max(decoded.lastIndexOf("/"), decoded.lastIndexOf("\\"));
-          return decoded.substring(lastSlash + 1).split("?")[0];
-        } catch (e) {
-          return undefined;
+    const getCurrentParams = (dontInitialize?: boolean) => {
+        const urlSearchParams = new URLSearchParams(window.location.search);
+        const localStorageParams = new URLSearchParams(
+            localStorage.getItem(LOCALSTORAGE_KEY)
+                ? localStorage.getItem(LOCALSTORAGE_KEY)!
+                : undefined,
+        );
+        for (const [key, value] of urlSearchParams) {
+            // URL trumps local storage
+            localStorageParams.set(key, value);
         }
-      }
-      return undefined;
-    },
-    getCurrentValue: (propName: string) => {
-      return getCurrentParams().get(propName);
-    },
-    getCurrentDeserializedValue: <T,> (propName: string, deserializer: (s: string)=>T) => {
-      const val = getCurrentParams().get(propName);
-      return val === null ? undefined : deserializer(val);
-    },
-    updateValue: (propName: string, value: string | undefined) => {
-      const newParams = getCurrentParams();
-      if(value === undefined){
-        newParams.delete(propName);
-      }
-      else{
-        newParams.set(propName, value);
-      }
-      writeParamsToUrlAndLocalstorage(newParams);
-    }
-  };
+        if (!initialized && !dontInitialize) {
+            //we don't want to write to the URL / local storage if the
+            //caller isn't using URL/local storage, so do not write on the
+            //initial call.
+            initialized = true;
+            writeParamsToUrlAndLocalstorage(localStorageParams);
+        }
+        return localStorageParams;
+    };
+    //set the startup parameter set, but don't sync the url/local storage
+    //until a real caller requests these data.
+    const parametersOnLoad = getCurrentParams(true);
+
+    return {
+        setValidSavePropKeys: (keys: string[]) => {
+            //required before any writing occurs
+            VALID_SAVE_PROP_KEYS = keys;
+            writeParamsToUrlAndLocalstorage(getCurrentParams());
+        },
+        getAlignmentUrlParam: () => {
+            //special case
+            const urlSearchParams = new URLSearchParams(window.location.search);
+            const resultsPath = urlSearchParams.get("resultsPath");
+
+            if (resultsPath) {
+                const base = new URL(".", document.baseURI).pathname;
+                const baseUrl = `${base}alignment-file`;
+                return `${baseUrl}?resultsPath=${encodeURIComponent(
+                    resultsPath,
+                )}`;
+            }
+            return undefined;
+        },
+        getAlignmentNameParam: () => {
+            //special case
+            const urlSearchParams = new URLSearchParams(window.location.search);
+            const name = urlSearchParams.get("alignment-name");
+            if (name) return name;
+
+            const resultsPath = urlSearchParams.get("resultsPath");
+
+            if (resultsPath) {
+                try {
+                    const decoded = decodeURIComponent(resultsPath);
+                    const lastSlash = Math.max(
+                        decoded.lastIndexOf("/"),
+                        decoded.lastIndexOf("\\"),
+                    );
+                    return decoded.substring(lastSlash + 1).split("?")[0];
+                } catch (e) {
+                    return "alignment-file";
+                }
+            }
+            return undefined;
+        },
+        getCurrentValue: (propName: string) => {
+            return getCurrentParams().get(propName);
+        },
+        getCurrentDeserializedValue: <T,>(
+            propName: string,
+            deserializer: (s: string) => T,
+        ) => {
+            const val = getCurrentParams().get(propName);
+            return val === null ? undefined : deserializer(val);
+        },
+        updateValue: (propName: string, value: string | undefined) => {
+            const newParams = getCurrentParams();
+            if (value === undefined) {
+                newParams.delete(propName);
+            } else {
+                newParams.set(propName, value);
+            }
+            writeParamsToUrlAndLocalstorage(newParams);
+        },
+    };
 })();
-
-
 
 /**
  * This hook acts as middleware for the global settings state, helping to
  * initialize individual state as well as updating the url and local storage
  * to state changes.
- * @param props 
- * @returns 
+ * @param props
+ * @returns
  */
 export function useGlobalSettingsMiddleware<T>(props: {
-  propKey: string;
-  currentValue: T;
-  defaultValue: T;
-  serialize: (obj: T) => string | undefined;
-  useUrlAndLocalstorage: boolean;
-}){
-  const {
-    propKey,
-    currentValue,
-    defaultValue,
-    useUrlAndLocalstorage,
-    serialize
-  } = props;
+    propKey: string;
+    currentValue: T;
+    defaultValue: T;
+    serialize: (obj: T) => string | undefined;
+    useUrlAndLocalstorage: boolean;
+}) {
+    const {
+        propKey,
+        currentValue,
+        defaultValue,
+        useUrlAndLocalstorage,
+        serialize,
+    } = props;
 
-  const currentValueStr = serialize(currentValue);
-  const lastValue = useRef<string>();
+    const currentValueStr = serialize(currentValue);
+    const lastValue = useRef<string>();
 
-  if(useUrlAndLocalstorage && currentValueStr !== lastValue.current){
-    const defaultValueStr = serialize(defaultValue);
-    globalSettingsUrlLocalStorageManager.updateValue(
-      propKey, 
-      currentValueStr !== defaultValueStr
-        ? currentValueStr
-        : undefined //remove if default
-    );
-  }
-  lastValue.current = currentValueStr;
-};
-
+    if (useUrlAndLocalstorage && currentValueStr !== lastValue.current) {
+        const defaultValueStr = serialize(defaultValue);
+        globalSettingsUrlLocalStorageManager.updateValue(
+            propKey,
+            currentValueStr !== defaultValueStr ? currentValueStr : undefined, //remove if default
+        );
+    }
+    lastValue.current = currentValueStr;
+}
 
 /**
- * Generate a select box for a list of "IListOfPropObjects" (e.g., ResidueColoring, 
- * LogoType, etc). It is up to the caller to process the property changes from 
+ * Generate a select box for a list of "IListOfPropObjects" (e.g., ResidueColoring,
+ * LogoType, etc). It is up to the caller to process the property changes from
  * the "onChange" callback, pass them back through the "currentVal" prop. Also,
- * to use "useUrlAndLocalstorage", the initial call should set currentVal to 
+ * to use "useUrlAndLocalstorage", the initial call should set currentVal to
  * undefined - and the url / local storage manager will initialze the current
  * value.
- * 
- * @param props 
- * @returns 
+ *
+ * @param props
+ * @returns
  */
-export function InputSelectSetting<
-  U extends IPropObjectInstanceInList, 
->(props: {
-  propKey: string;
-  currentValue: U;
-  defaultValue: U;
-  allPossibleValues: U[];
-  serialize: (obj: U) => string | undefined;
-  deserialize: (key: string) => U | undefined;
-  onChange: (deserializedValue: U) => void;
-  useUrlAndLocalstorage: boolean;
-}){
-  useGlobalSettingsMiddleware<U>({
-    propKey: props.propKey,
-    currentValue: props.currentValue,
-    defaultValue: props.defaultValue,
-    serialize: props.serialize,
-    useUrlAndLocalstorage: props.useUrlAndLocalstorage
-  })
-
-  const options = useMemo(()=>{
-    return props.allPossibleValues.map((v) => {
-      return {value: v.key, label: v.description}
+export function InputSelectSetting<U extends IPropObjectInstanceInList>(props: {
+    propKey: string;
+    currentValue: U;
+    defaultValue: U;
+    allPossibleValues: U[];
+    serialize: (obj: U) => string | undefined;
+    deserialize: (key: string) => U | undefined;
+    onChange: (deserializedValue: U) => void;
+    useUrlAndLocalstorage: boolean;
+}) {
+    useGlobalSettingsMiddleware<U>({
+        propKey: props.propKey,
+        currentValue: props.currentValue,
+        defaultValue: props.defaultValue,
+        serialize: props.serialize,
+        useUrlAndLocalstorage: props.useUrlAndLocalstorage,
     });
-  }, [props.allPossibleValues]);
 
-  return (
-    <Select
-      id={props.propKey}
-      options={options}
-      onChange={(newVal)=>{
-        props.onChange( props.deserialize(newVal!.value)!);
-      }}
-      value={!props.currentValue
-        ? undefined
-        : options.find(v => v.value === props.currentValue.key)
-      }
-      isSearchable={false}
-      //to decrease size see: https://stackoverflow.com/questions/54218351
-    />
-  );
+    const options = useMemo(() => {
+        return props.allPossibleValues.map((v) => {
+            return { value: v.key, label: v.description };
+        });
+    }, [props.allPossibleValues]);
+
+    return (
+        <Select
+            id={props.propKey}
+            options={options}
+            onChange={(newVal) => {
+                props.onChange(props.deserialize(newVal!.value)!);
+            }}
+            value={
+                !props.currentValue
+                    ? undefined
+                    : options.find((v) => v.value === props.currentValue.key)
+            }
+            isSearchable={false}
+            //to decrease size see: https://stackoverflow.com/questions/54218351
+        />
+    );
 }
 
 export function InputMultiSelectSetting<
-  U extends IPropObjectInstanceInList, 
+    U extends IPropObjectInstanceInList,
 >(props: {
-  propKey: string;
-  currentValues: U[];
-  defaultValues: U[];
-  allPossibleValues: U[];
-  serialize: (obj: U[]) => string | undefined;
-  onChange: (deserializedValues: U[]) => void;
-  useUrlAndLocalstorage: boolean;
-}){
-  useGlobalSettingsMiddleware<U[]>({
-    propKey: props.propKey,
-    currentValue: props.currentValues,
-    defaultValue: props.defaultValues,
-    serialize: props.serialize,
-    useUrlAndLocalstorage: props.useUrlAndLocalstorage
-  })
-
-  const options = useMemo(()=>{
-    return props.allPossibleValues.map((v) => {
-      return {value: v.key, label: v.description}
+    propKey: string;
+    currentValues: U[];
+    defaultValues: U[];
+    allPossibleValues: U[];
+    serialize: (obj: U[]) => string | undefined;
+    onChange: (deserializedValues: U[]) => void;
+    useUrlAndLocalstorage: boolean;
+}) {
+    useGlobalSettingsMiddleware<U[]>({
+        propKey: props.propKey,
+        currentValue: props.currentValues,
+        defaultValue: props.defaultValues,
+        serialize: props.serialize,
+        useUrlAndLocalstorage: props.useUrlAndLocalstorage,
     });
-  }, [props.allPossibleValues]);
 
-  const optionToU = useCallback((
-    vals: MultiValue<{ value: string; label: string;}>
-  )=>{
-    return vals.map((val) => {
-      return props.allPossibleValues.find((v) => v.key === val.value)!
-    });
-  }, [
-    props.allPossibleValues
-  ]);
+    const options = useMemo(() => {
+        return props.allPossibleValues.map((v) => {
+            return { value: v.key, label: v.description };
+        });
+    }, [props.allPossibleValues]);
 
-  return (
-    <Select
-      id={props.propKey}
-      options={options}
-      onChange={(newVals)=>{
-        const uArr = optionToU(newVals);
-        props.onChange( uArr );
-      }}
-      isMulti={true}
-      value={!props.currentValues
-        ? undefined
-        : options.reduce((acc, val) => {
-          if(props.currentValues.find(cv => cv.key === val.value)){
-            acc.push(val)
-          }
-          return acc;
-        }, [] as typeof options)
-      }
-      isSearchable={false}
-      //to decrease size see: https://stackoverflow.com/questions/54218351
-    />
-  );
+    const optionToU = useCallback(
+        (vals: MultiValue<{ value: string; label: string }>) => {
+            return vals.map((val) => {
+                return props.allPossibleValues.find(
+                    (v) => v.key === val.value,
+                )!;
+            });
+        },
+        [props.allPossibleValues],
+    );
+
+    return (
+        <Select
+            id={props.propKey}
+            options={options}
+            onChange={(newVals) => {
+                const uArr = optionToU(newVals);
+                props.onChange(uArr);
+            }}
+            isMulti={true}
+            value={
+                !props.currentValues
+                    ? undefined
+                    : options.reduce(
+                          (acc, val) => {
+                              if (
+                                  props.currentValues.find(
+                                      (cv) => cv.key === val.value,
+                                  )
+                              ) {
+                                  acc.push(val);
+                              }
+                              return acc;
+                          },
+                          [] as typeof options,
+                      )
+            }
+            isSearchable={false}
+            //to decrease size see: https://stackoverflow.com/questions/54218351
+        />
+    );
 }
 
 export function InputBooleanSetting(props: {
-  propKey: string;
-  currentValue: boolean;
-  defaultValue: boolean;
-  onChange: (newVal: boolean) => void;
-  useUrlAndLocalstorage: boolean;
-}){
-  const booleanSerializer = useMemo(()=>{
-    return (b: boolean) => {return b ? 'true': 'false'}
-  }, []);
+    propKey: string;
+    currentValue: boolean;
+    defaultValue: boolean;
+    onChange: (newVal: boolean) => void;
+    useUrlAndLocalstorage: boolean;
+}) {
+    const booleanSerializer = useMemo(() => {
+        return (b: boolean) => {
+            return b ? "true" : "false";
+        };
+    }, []);
 
-  const onChange = props.onChange;
-  const checkboxToggled = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(e.target.checked);
-  }, [onChange]);
+    const onChange = props.onChange;
+    const checkboxToggled = useCallback(
+        (e: React.ChangeEvent<HTMLInputElement>) => {
+            onChange(e.target.checked);
+        },
+        [onChange],
+    );
 
-  useGlobalSettingsMiddleware<boolean>({
-    propKey: props.propKey,
-    currentValue: props.currentValue,
-    defaultValue: props.defaultValue,
-    serialize: booleanSerializer,
-    useUrlAndLocalstorage: props.useUrlAndLocalstorage
-  })
+    useGlobalSettingsMiddleware<boolean>({
+        propKey: props.propKey,
+        currentValue: props.currentValue,
+        defaultValue: props.defaultValue,
+        serialize: booleanSerializer,
+        useUrlAndLocalstorage: props.useUrlAndLocalstorage,
+    });
 
-  return (
-    <input
-      id={props.propKey}
-      name={props.propKey}
-      type="checkbox"
-      checked={props.currentValue}
-      onChange={checkboxToggled}
-    />
-  );
+    return (
+        <input
+            id={props.propKey}
+            name={props.propKey}
+            type="checkbox"
+            checked={props.currentValue}
+            onChange={checkboxToggled}
+        />
+    );
 }
 
 export function InputNumberSetting(props: {
-  propKey: string;
-  currentValue: number;
-  defaultValue: number;
-  minValue: number;
-  maxValue: number;
-  onChange: (newVal: number) => void;
-  useUrlAndLocalstorage: boolean;
-}){
-  const {
-    currentValue,
-    minValue,
-    maxValue,
-    onChange,
-  } = props;
+    propKey: string;
+    currentValue: number;
+    defaultValue: number;
+    minValue: number;
+    maxValue: number;
+    onChange: (newVal: number) => void;
+    useUrlAndLocalstorage: boolean;
+}) {
+    const { currentValue, minValue, maxValue, onChange } = props;
 
-  const numberSerializer = useCallback((n: number)=>{
-    return n.toString();
-  }, []);
+    const numberSerializer = useCallback((n: number) => {
+        return n.toString();
+    }, []);
 
-  useGlobalSettingsMiddleware<number>({
-    propKey: props.propKey,
-    currentValue: currentValue,
-    defaultValue: props.defaultValue,
-    serialize: numberSerializer,
-    useUrlAndLocalstorage: props.useUrlAndLocalstorage
-  })
+    useGlobalSettingsMiddleware<number>({
+        propKey: props.propKey,
+        currentValue: currentValue,
+        defaultValue: props.defaultValue,
+        serialize: numberSerializer,
+        useUrlAndLocalstorage: props.useUrlAndLocalstorage,
+    });
 
-  const increment = useCallback(()=>{
-    if(currentValue + 1 <= maxValue){ 
-      onChange(currentValue + 1); 
-    }
-  }, [
-    currentValue,
-    maxValue,
-    onChange
-  ]);
+    const increment = useCallback(() => {
+        if (currentValue + 1 <= maxValue) {
+            onChange(currentValue + 1);
+        }
+    }, [currentValue, maxValue, onChange]);
 
-  const decrement = useCallback(()=>{
-    if(currentValue - 1 >= minValue) {
-      onChange(currentValue - 1);
-    }
-  }, [
-    currentValue,
-    minValue,
-    onChange,
-  ]);
+    const decrement = useCallback(() => {
+        if (currentValue - 1 >= minValue) {
+            onChange(currentValue - 1);
+        }
+    }, [currentValue, minValue, onChange]);
 
-  return (
-    <div className="stepper-holder">
-      <div className="stepper">
-        <button
-          type="button"
-          disabled={currentValue <= minValue}
-          onClick={decrement}>&#xFF0D;</button>
-        <span id={props.propKey}>{currentValue}</span>
-        <button
-          type="button"
-          disabled={currentValue >= maxValue}
-          onClick={increment}>&#xFF0B;</button>
-      </div>
-    </div>
-  );
+    return (
+        <div className="stepper-holder">
+            <div className="stepper">
+                <button
+                    type="button"
+                    disabled={currentValue <= minValue}
+                    onClick={decrement}
+                >
+                    &#xFF0D;
+                </button>
+                <span id={props.propKey}>{currentValue}</span>
+                <button
+                    type="button"
+                    disabled={currentValue >= maxValue}
+                    onClick={increment}
+                >
+                    &#xFF0B;
+                </button>
+            </div>
+        </div>
+    );
 }
-
 
 //
 // generic hook
@@ -419,7 +424,7 @@ export function InputNumberSetting(props: {
       urlManager.currentValue.key
     }
   }
-  
+
   return (
     <>
       <label>{urlManager.propName}</label>
@@ -445,7 +450,6 @@ export function InputNumberSetting(props: {
     </>
   );
 }*/
-
 
 //type StaticImplements<S, C extends S> = any;
 //interface IPropObjectInstance {
@@ -477,7 +481,6 @@ export function InputNumberSetting(props: {
 //    return ResiToStyle.list.find(o => o.key === key);
 //  }
 //}
-
 
 /*
 type StaticImplements<S, C extends S> = any;
@@ -513,7 +516,7 @@ export abstract class BaseGlobalObjectPropClass implements mytype{
     return BaseGlobalObjectPropClass.list().find(o => o.key === key);
   }
 
-  //these will include every single instance of implementing 
+  //these will include every single instance of implementing
   //classes created. What we really want is for instances to
   //be specific for a particular base class.
   private static _INSTANCES: BaseGlobalObjectPropClass[] = [];

@@ -1,6 +1,6 @@
 {
-  "name": "alignment-viewer-2",
-  "homepage": "https://fast.alignmentviewer.org",
+  "name": "alignment-viewer",
+  "homepage": ".",
   "version": "2.0.0-beta-2",
   "private": false,
   "author": "Nicholas Gauthier",

@@ -102,7 +102,7 @@ const defaultProps = {
 }
 
 /**
- * Main react hook for laying out the entire alignment viewer 2.0 visualization.
+ * Main react hook for laying out the entire alignment viewer visualization.
  * @param props 
  * @returns 
  */

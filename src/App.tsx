@@ -12,12 +12,11 @@ export default function App(){
   //local state
   const [state, setState] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const isAutoLoading = urlParams.has("resultsPath") || 
-                         urlParams.has("alignment-url") ||
-                         (window.location.pathname === "/" && window.location.search === "");
+    const hasExplicitAlignment = urlParams.has("resultsPath") || urlParams.has("alignment-url");
+    const isAutoLoading = true; // Always attempt auto-loading if nothing else is specified
     
     return {
-      showSettings: !isAutoLoading,
+      showSettings: hasExplicitAlignment ? false : !isAutoLoading,
       mainViewportVisibleIdxs: undefined as undefined | {
         seqIdxStart: number, seqIdxEnd: number,
         posIdxStart: number, posIdxEnd: number
@@ -34,43 +33,6 @@ export default function App(){
       ...prev,
       showSettings: false
     }));
-  }, []);
-
-  useMemo(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const resultsPath = urlParams.get("resultsPath");
-    const isRootWithoutParams = window.location.pathname === "/" && window.location.search === "";
-    
-    if (resultsPath || isRootWithoutParams) {
-      const baseUrl = `http://localhost:8000/alignment-file`;
-      const fetchUrl = resultsPath ? `${baseUrl}?resultsPath=${encodeURIComponent(resultsPath)}` : baseUrl;
-      let updated = false;
-
-      // Ensure alignment-url matches resultsPath
-      if (urlParams.get("alignment-url") !== fetchUrl) {
-        urlParams.set("alignment-url", fetchUrl);
-        updated = true;
-      }
-
-      // Ensure alignment-name is extracted and set
-      try {
-        const decoded = decodeURIComponent(resultsPath || "");
-        const name = !decoded ? "alignment-file" : (() => {
-          const lastSlash = Math.max(decoded.lastIndexOf("/"), decoded.lastIndexOf("\\"));
-          return decoded.substring(lastSlash + 1).split("?")[0];
-        })();
-        if (name && urlParams.get("alignment-name") !== name) {
-          urlParams.set("alignment-name", name);
-          updated = true;
-        }
-      } catch (e) {
-        // ignore errors
-      }
-
-      if (updated && resultsPath) {
-        window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
-      }
-    }
   }, []);
 
   const settings = useAV2Settings({
@@ -96,14 +58,6 @@ export default function App(){
       AlignmentLoader.onSortUpdate = originalOnSortUpdate;
     };
   }, [settings.currentlySelectedProperties.sortBy?.key]);
-
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get("resultsPath") || (window.location.pathname === "/" && window.location.search === "")) {
-      // Auto-hide settings so it doesn't pop up over the loading screen
-      setState((prev) => ({ ...prev, showSettings: false }));
-    }
-  }, []);
 
   const {
     alignment,
@@ -313,7 +267,7 @@ export default function App(){
                     alt="Download Alignment" 
                     width="16"
                     height="16"
-                    src={`${process.env.PUBLIC_URL}/download.svg`}
+                    src={`./download.svg`}
                   />
                 </button>
                 
@@ -330,7 +284,7 @@ export default function App(){
                     alt="Show Search"
                     width="16"
                     height="16"
-                    src={`${process.env.PUBLIC_URL}/search.svg`}
+                    src={`./search.svg`}
                   />
                 </button>
 
@@ -351,7 +305,7 @@ export default function App(){
                     alt="Show Settings Box"
                     width="16"
                     height="16"
-                    src={`${process.env.PUBLIC_URL}/settings.svg`}
+                    src={`./settings.svg`}
                   />
                 </button>
               </div> 

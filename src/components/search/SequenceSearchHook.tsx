@@ -361,7 +361,7 @@ export function SequenceSearch(props: {
                 alt="Close Search Box" 
                 width="16"
                 height="16"
-                src={`${process.env.PUBLIC_URL}/close.svg`}
+                src={`./close.svg`}
               />
             </button>
         </form>
