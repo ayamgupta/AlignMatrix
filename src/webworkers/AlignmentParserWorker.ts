@@ -2,37 +2,61 @@
 /**
  * AlignmentParserWorker
  * ---------------------
- * Option B: Parallel Worker Pool Engine for 4GB+ protein alignments.
+ * High-performance database-style engine for 4GB+ protein alignments.
  */
 
+// ---- types -----------------------------------------------------------------
+
 export interface IWorkerMetadata {
-  name: string; uuid: string; sequenceCount: number; maxSequenceLength: number;
-  predictedNT: boolean; numberDuplicateSequencesInAlignment: number;
-  numberRemovedDuplicateSequences: number; querySequence: { sequence: string; annotations: Record<string, any> };
+  name: string;
+  uuid: string;
+  sequenceCount: number;
+  maxSequenceLength: number;
+  predictedNT: boolean;
+  numberDuplicateSequencesInAlignment: number;
+  numberRemovedDuplicateSequences: number;
+  querySequence: { sequence: string; annotations: Record<string, any> };
   consensus: { sequence: string; annotations: Record<string, any> };
-  allRepresentedCharacters: string[]; allUpperAlphaLettersInAlignmentSorted: string[];
-  positionalLetterCounts: [number, { [letter: string]: number }][]; globalAlphaLetterCounts: { [letter: string]: number };
+  allRepresentedCharacters: string[];
+  allUpperAlphaLettersInAlignmentSorted: string[];
+  positionalLetterCounts: [number, { [letter: string]: number }][];
+  globalAlphaLetterCounts: { [letter: string]: number };
   annotationFields: Record<string, { key: string; name: string }>;
 }
 
 const AF = {
-  ID: "@@id", ACTUAL_ID: "@@actualId", DESCRIPTION: "@@description", BEGIN: "@@begin", END: "@@end", LINK: "@@link",
-  REAL_LENGTH: "@@realLength", ALIGNED_LENGTH: "@@alignedLength", LEFT_GAP_COUNT: "@@leftGapCount",
-  INTERNAL_GAP_COUNT: "@@internalGapCount", RIGHT_GAP_COUNT: "@@rightGapCount",
+  ID: "@@id",
+  ACTUAL_ID: "@@actualId",
+  DESCRIPTION: "@@description",
+  BEGIN: "@@begin",
+  END: "@@end",
+  LINK: "@@link",
+  REAL_LENGTH: "@@realLength",
+  ALIGNED_LENGTH: "@@alignedLength",
+  LEFT_GAP_COUNT: "@@leftGapCount",
+  INTERNAL_GAP_COUNT: "@@internalGapCount",
+  RIGHT_GAP_COUNT: "@@rightGapCount",
 } as const;
 
-interface IStoredSequence { sequence: string; annotations: Record<string, any>; }
+// ---- Storage Layer ---------------------------------------------------------
+
+interface IStoredSequence {
+  sequence: string;
+  annotations: Record<string, any>;
+}
 
 class SequenceStorage {
   private mode: "ram" | "opfs" = "ram";
   private ramSequences: IStoredSequence[] = [];
+  
   private opfsFile: any | null = null;
   private opfsOffsets: BigUint64Array | null = null;
   private opfsLengths: Int32Array | null = null;
   private opfsAnnotations: Record<string, any>[] = [];
-  private opfsPtr = 0;
+  private opfsPtr = 0; // Use number for 4GB (safe up to 9PB)
   private count = 0;
   private capacity = 1000000;
+
   private writeBuffer = new Uint8Array(8 * 1024 * 1024);
   private writeBufferPtr = 0;
 
@@ -40,9 +64,13 @@ class SequenceStorage {
     if (useOpfs && typeof navigator !== "undefined" && navigator.storage && navigator.storage.getDirectory) {
       try {
         const root = await navigator.storage.getDirectory();
-        for await (const name of (root as any).keys()) {
-          if (name.startsWith("alignment_buffer_")) await root.removeEntry(name).catch(()=>{});
-        }
+        try {
+          const names = await (root as any).keys();
+          for await (const name of names) {
+            if (name.startsWith("alignment_buffer_")) await root.removeEntry(name).catch(()=>{});
+          }
+        } catch (e) {}
+        
         const fileHandle = await root.getFileHandle("alignment_buffer_" + Math.random(), { create: true });
         // @ts-ignore
         this.opfsFile = await fileHandle.createSyncAccessHandle();
@@ -53,31 +81,45 @@ class SequenceStorage {
     } else { this.mode = "ram"; }
   }
 
-  private ensureCapacity(target: number) {
-    if (this.mode === "opfs" && target >= this.capacity) {
-      const newCap = this.capacity * 2;
-      const nO = new BigUint64Array(newCap); const nL = new Int32Array(newCap);
-      if (this.opfsOffsets) nO.set(this.opfsOffsets); if (this.opfsLengths) nL.set(this.opfsLengths);
-      this.opfsOffsets = nO; this.opfsLengths = nL; this.capacity = newCap;
+  private ensureCapacity() {
+    if (this.mode === "opfs" && this.count >= this.capacity) {
+      this.capacity *= 2;
+      const newOffsets = new BigUint64Array(this.capacity);
+      const newLengths = new Int32Array(this.capacity);
+      newOffsets.set(this.opfsOffsets!);
+      newLengths.set(this.opfsLengths!);
+      this.opfsOffsets = newOffsets;
+      this.opfsLengths = newLengths;
     }
   }
 
-  add(sequence: Uint8Array, annotations: Record<string, any>) {
+  add(sequence: string | Uint8Array, annotations: Record<string, any>) {
     if (this.mode === "ram") {
-      this.ramSequences.push({ sequence: new TextDecoder().decode(sequence), annotations });
+      this.ramSequences.push({ 
+        sequence: typeof sequence === "string" ? sequence : new TextDecoder().decode(sequence), 
+        annotations 
+      });
     } else {
-      this.ensureCapacity(this.count);
-      if (this.writeBufferPtr + sequence.length > this.writeBuffer.length) this.flush();
-      if (sequence.length > this.writeBuffer.length) {
-        this.opfsFile.write(sequence, { at: BigInt(this.opfsPtr) });
+      this.ensureCapacity();
+      const bytes = typeof sequence === "string" ? new TextEncoder().encode(sequence) : sequence;
+      
+      if (this.writeBufferPtr + bytes.length > this.writeBuffer.length) {
+        this.flush();
+      }
+
+      if (bytes.length > this.writeBuffer.length) {
+        // Write large sequence directly
+        const at = this.opfsPtr;
+        this.opfsFile.write(bytes, { at });
         this.opfsOffsets![this.count] = BigInt(this.opfsPtr);
-        this.opfsLengths![this.count] = sequence.length;
-        this.opfsPtr += sequence.length;
+        this.opfsLengths![this.count] = bytes.length;
+        this.opfsPtr += bytes.length;
       } else {
-        this.writeBuffer.set(sequence, this.writeBufferPtr);
-        this.opfsOffsets![this.count] = BigInt(this.opfsPtr) + BigInt(this.writeBufferPtr);
-        this.opfsLengths![this.count] = sequence.length;
-        this.writeBufferPtr += sequence.length;
+        // Buffer small sequence
+        this.writeBuffer.set(bytes, this.writeBufferPtr);
+        this.opfsOffsets![this.count] = BigInt(this.opfsPtr + this.writeBufferPtr);
+        this.opfsLengths![this.count] = bytes.length;
+        this.writeBufferPtr += bytes.length;
       }
       this.opfsAnnotations[this.count] = annotations;
     }
@@ -86,26 +128,56 @@ class SequenceStorage {
 
   flush() {
     if (this.mode === "opfs" && this.writeBufferPtr > 0) {
-      this.opfsFile.write(this.writeBuffer.subarray(0, this.writeBufferPtr), { at: BigInt(this.opfsPtr) });
-      this.opfsPtr += this.writeBufferPtr;
-      this.writeBufferPtr = 0;
-      this.opfsFile.flush();
+      try {
+        const at = this.opfsPtr;
+        this.opfsFile.write(this.writeBuffer.subarray(0, this.writeBufferPtr), { at });
+        this.opfsPtr += this.writeBufferPtr;
+        this.writeBufferPtr = 0;
+        this.opfsFile.flush();
+      } catch(e) {
+        console.error("OPFS flush failed", e);
+      }
     }
   }
 
   get(index: number): IStoredSequence {
-    if (index === undefined || index === null || index < 0 || index >= this.count) return { sequence: "", annotations: {} };
-    if (this.mode === "ram") return this.ramSequences[index] || { sequence: "", annotations: {} };
-    const offset = this.opfsOffsets![index]; const length = this.opfsLengths![index];
-    if (length <= 0) return { sequence: "", annotations: this.opfsAnnotations[index] || {} };
-    if (offset >= BigInt(this.opfsPtr)) {
-      const rel = Number(offset - BigInt(this.opfsPtr)); const end = Math.min(rel + length, this.writeBufferPtr);
-      return { sequence: new TextDecoder().decode(this.writeBuffer.subarray(rel, end)), annotations: this.opfsAnnotations[index] };
+    if (index === undefined || index === null || isNaN(index) || index < 0 || index >= this.count) {
+      return { sequence: "", annotations: {} };
     }
+    if (this.mode === "ram") return this.ramSequences[index];
+    
+    const offsetBI = this.opfsOffsets![index];
+    const length = this.opfsLengths![index];
+    if (length <= 0) return { sequence: "", annotations: this.opfsAnnotations[index] || {} };
+
+    // Check buffer
+    const onDiskSize = this.opfsPtr;
+    if (offsetBI >= BigInt(onDiskSize)) {
+      const rel = Number(offsetBI - BigInt(onDiskSize));
+      if (rel + length <= this.writeBufferPtr) {
+        return { 
+          sequence: new TextDecoder().decode(this.writeBuffer.subarray(rel, rel + length)), 
+          annotations: this.opfsAnnotations[index] 
+        };
+      }
+    }
+
     const buffer = new Uint8Array(length);
-    const at = BigInt(offset.toString()); 
-    try { this.opfsFile.read(buffer, { at }); } catch (e) { return { sequence: "-".repeat(length), annotations: this.opfsAnnotations[index] || {} }; }
-    return { sequence: new TextDecoder().decode(buffer), annotations: this.opfsAnnotations[index] };
+    try {
+      const at = Number(offsetBI);
+      this.opfsFile.read(buffer, { at });
+    } catch (e) {
+      // Emergency fallback to BigInt if Number fails
+      try {
+        this.opfsFile.read(buffer, { at: offsetBI });
+      } catch (e2) {
+        return { sequence: "-".repeat(length), annotations: this.opfsAnnotations[index] || {} };
+      }
+    }
+    return {
+      sequence: new TextDecoder().decode(buffer),
+      annotations: this.opfsAnnotations[index]
+    };
   }
 
   getAnnotations(index: number): Record<string, any> {
@@ -114,23 +186,40 @@ class SequenceStorage {
   }
 
   size() { return this.count; }
-  getInternalPointers() { return { offsets: this.opfsOffsets, lengths: this.opfsLengths, ptr: this.opfsPtr, file: this.opfsFile }; }
+
+  getInternalPointers() {
+    return {
+      offsets: this.opfsOffsets,
+      lengths: this.opfsLengths,
+      onDiskSize: this.opfsPtr,
+      file: this.opfsFile,
+      writeBuffer: this.writeBuffer,
+      writeBufferPtr: this.writeBufferPtr
+    };
+  }
+
   clear() {
-    this.ramSequences = []; this.opfsAnnotations = []; this.opfsPtr = 0; this.count = 0;
-    if (this.opfsFile) { try { this.opfsFile.close(); } catch (e) {} this.opfsFile = null; }
+    this.ramSequences = [];
+    this.opfsAnnotations = [];
+    this.opfsPtr = 0;
+    this.count = 0;
+    if (this.opfsFile) {
+      try { this.opfsFile.close(); } catch (e) {}
+      this.opfsFile = null;
+    }
   }
 }
 
 let _storage = new SequenceStorage();
 const _sortedIndicesCache = new Map<string, Int32Array>();
-let _currentSort: { key: string, scores: Float32Array, target: Uint8Array, isBlosum: boolean, nextIdx: number, scoredCount: number } | null = null;
+let _currentSort: { key: string, scores: Float32Array, target: Uint8Array, isBlosum: boolean, startIdx: number } | null = null;
 let _querySequence: string = "";
 let _consensusSequence: string = "";
 
-// ---- Parallel Scoring Pool (Option B) --------------------------------------
+// ---- sorting logic ---------------------------------------------------------
 
-const COMPUTE_WORKER_CODE = `
-  const BLOSUM62_BYTES = new Int8Array(128 * 128);
+const BLOSUM62_BYTES = new Int8Array(128 * 128);
+(function initializeBlosum() {
   const codes = "ARNDCQEGHILKMFPSTWYV";
   const scores = [[4,-1,-2,-2,0,-1,-1,0,-2,-1,-1,-1,-1,-2,-1,1,0,-3,-2,0],[-1,5,0,-2,-3,1,0,-2,0,-3,-2,2,-1,-3,-2,-1,-1,-3,-2,-3],[-2,0,6,1,-3,0,0,0,1,-3,-3,0,-2,-3,-2,1,0,-4,-2,-3],[-2,-2,1,6,-3,0,2,-1,-1,-3,-4,-1,-3,-3,-1,0,-1,-4,-3,-3],[0,-3,-3,-3,9,-3,-4,-3,-3,-1,-1,-3,-1,-2,-3,-1,-1,-2,-2,-1],[-1,1,0,0,-3,5,2,-2,0,-3,-2,1,0,-3,-1,0,-1,-2,-1,-2],[-1,0,0,2,-4,2,5,-2,0,-3,-3,1,-2,-3,-1,0,-1,-3,-2,-2],[0,-2,0,-1,-3,-2,-2,6,-2,-4,-4,-2,-3,-3,-2,0,-2,-2,-3,-3],[-2,0,1,-1,-3,0,0,-2,8,-3,-3,-1,-2,-1,-2,-1,-2,-2,2,-3],[-1,-3,-3,-3,-1,-3,-3,-4,-3,4,2,-3,1,0,-3,-1,1,-3,-1,3],[-1,-2,-3,-4,-1,-2,-3,-4,-3,2,4,-2,2,0,-3,-2,-1,-2,-1,1],[-1,2,0,-1,-3,1,1,-2,-1,-3,-2,5,-1,-3,-1,0,-1,-3,-2,-2],[-1,-1,-2,-3,-1,0,-2,-3,-2,1,2,-1,5,0,-2,-1,-1,-1,-1,1],[-2,-3,-3,-3,-2,-3,-3,-3,-1,0,0,-3,0,6,-3,-2,-2,1,3,-1],[-1,-2,-2,-1,-3,-1,-1,-2,-2,-3,-3,-1,-2,-3,7,-1,-1,-4,-3,-2],[1,-1,1,0,-1,0,0,0,-1,-1,-2,0,-1,-2,-1,4,1,-3,-2,0],[0,-1,0,-1,-1,-1,-1,-2,-2,1,-1,-1,-1,-2,-1,1,5,-2,-2,0],[-3,-3,-4,-4,-2,-2,-3,-2,-2,-3,-2,-3,-1,1,-4,-3,-2,11,2,-3],[-2,-2,-2,-3,-2,-1,-2,-3,2,-1,-1,-2,-1,3,-3,-2,-2,2,7,-1],[0,-3,-3,-3,-1,-2,-2,-3,-3,3,1,-2,1,-1,-2,0,0,-3,-1,4]];
   for (let i = 0; i < codes.length; i++) {
@@ -139,167 +228,384 @@ const COMPUTE_WORKER_CODE = `
       BLOSUM62_BYTES[cI * 128 + cJ] = scores[i][j]; BLOSUM62_BYTES[(cI+32)*128+cJ]=scores[i][j]; BLOSUM62_BYTES[cI*128+(cJ+32)]=scores[i][j]; BLOSUM62_BYTES[(cI+32)*128+(cJ+32)]=scores[i][j];
     }
   }
+})();
 
-  self.onmessage = (e) => {
-    const { startIdx, chunk, offsets, lengths, target, isBlosum, basePtr } = e.data;
-    const resScores = new Float32Array(offsets.length);
-    const targetLen = target.length;
-    const tShifts = new Int32Array(targetLen);
-    for(let k=0; k<targetLen; k++) tShifts[k] = target[k] << 7;
-
-    for (let i = 0; i < offsets.length; i++) {
-      const rel = Number(offsets[i] - basePtr); const len = lengths[i];
-      if (len <= 0) continue;
-      const seq = chunk.subarray(rel, rel + len);
-      if (isBlosum) {
-        let s = 0; const min = Math.min(len, targetLen);
-        for (let k = 0; k < min; k++) { const a = seq[k]; if (a < 128) s += BLOSUM62_BYTES[tShifts[k] | a]; }
-        resScores[i] = s;
-      } else {
-        let d = Math.abs(len - targetLen); const min = Math.min(len, targetLen);
-        for (let k = 0; k < min; k++) if (seq[k] !== target[k]) d++;
-        resScores[i] = d;
-      }
-    }
-    self.postMessage({ startIdx, scores: resScores }, [resScores.buffer]);
-  };
-`;
-
-const _workerPool: Worker[] = [];
-const _numWorkers = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
-
-function getPool(): Worker[] {
-  if (_workerPool.length === 0) {
-    const blob = new Blob([COMPUTE_WORKER_CODE], { type: "application/javascript" });
-    const url = URL.createObjectURL(blob);
-    for (let i = 0; i < _numWorkers; i++) _workerPool.push(new Worker(url));
-  }
-  return _workerPool;
-}
-
-function dispatch(worker: Worker) {
+/**
+ * OPTION A: Bit-Packed SIMD-style Comparison Loops
+ * Uses 32-bit word XORing to compare 4 characters at once.
+ */
+function runSortStep() {
   if (!_currentSort) return;
   const count = _storage.size();
-  if (_currentSort.nextIdx >= count) return;
-
-  const { offsets, lengths, file } = _storage.getInternalPointers();
-  const startIdx = _currentSort.nextIdx;
-  const baseOffset = offsets![startIdx];
-  const CHUNK_SIZE_BYTES = 10 * 1024 * 1024;
-  
-  let endIdx = startIdx;
-  while (endIdx < count && (offsets![endIdx] - baseOffset) < BigInt(CHUNK_SIZE_BYTES) && (endIdx - startIdx) < 50000) {
-    endIdx++;
-  }
-  _currentSort.nextIdx = endIdx;
-
-  const totalReadLen = Number(offsets![endIdx - 1] + BigInt(lengths![endIdx - 1]) - baseOffset);
-  const chunk = new Uint8Array(totalReadLen);
-  file.read(chunk, { at: BigInt(baseOffset.toString()) });
-
-  const batchOffsets = offsets!.slice(startIdx, endIdx);
-  const batchLengths = lengths!.slice(startIdx, endIdx);
-
-  worker.postMessage({
-    startIdx, chunk, offsets: batchOffsets, lengths: batchLengths,
-    target: _currentSort.target, isBlosum: _currentSort.isBlosum, basePtr: baseOffset
-  }, [chunk.buffer, batchOffsets.buffer, batchLengths.buffer]);
-}
-
-function finalizeSort() {
-  if (!_currentSort) return;
-  const count = _storage.size();
+  const endIdx = Math.min(_currentSort.startIdx + 200000, count);
+  const target = _currentSort.target; const targetLen = target.length;
   const scores = _currentSort.scores;
-  const packed = new BigUint64Array(count);
-  const offset = _currentSort.isBlosum ? 1000000 : 0;
-  for (let i = 0; i < count; i++) {
-    packed[i] = (BigInt(_currentSort.isBlosum ? offset - Math.round(scores[i]) : Math.round(scores[i])) << 32n) | BigInt(i);
+  const { offsets, lengths, onDiskSize, file, writeBuffer, writeBufferPtr } = _storage.getInternalPointers();
+  const chunkBuffer = new Uint8Array(32 * 1024 * 1024);
+  const targetShifts = new Int32Array(targetLen);
+  for(let k=0; k<targetLen; k++) targetShifts[k] = target[k] << 7;
+  let cStart = -1, cEnd = -1;
+
+  for (let i = _currentSort.startIdx; i < endIdx; i++) {
+    const offBI = offsets![i], len = lengths![i];
+    if (len <= 0) continue;
+    
+    let seq: Uint8Array;
+    if (offBI >= BigInt(onDiskSize)) {
+      // In RAM buffer
+      const rel = Number(offBI - BigInt(onDiskSize));
+      seq = writeBuffer.subarray(rel, rel + len);
+    } else {
+      // In File
+      const off = Number(offBI);
+      if (off < cStart || off + len > cEnd) {
+        cStart = off; 
+        const toRead = Math.min(32*1024*1024, onDiskSize - off);
+        if (toRead <= 0) {
+          seq = new Uint8Array(len);
+        } else {
+          try {
+            file.read(chunkBuffer.subarray(0, toRead), { at: off });
+            cEnd = off + toRead;
+          } catch (e) {
+            scores[i] = 999999;
+            continue;
+          }
+        }
+      }
+      const rel = off - cStart;
+      seq = chunkBuffer.subarray(rel, rel + len);
+    }
+    
+    if (_currentSort.isBlosum) {
+      let s = 0; const min = Math.min(len, targetLen);
+      for (let k = 0; k < min; k++) { const a = seq[k]; if (a < 128) s += BLOSUM62_BYTES[targetShifts[k] | a]; }
+      scores[i] = s;
+    } else {
+      // Bit-Packed Hamming optimization
+      let d = Math.abs(len - targetLen); const min = Math.min(len, targetLen);
+      const minAligned = min & ~3;
+      const s32 = new Uint32Array(seq.buffer, seq.byteOffset, minAligned >> 2);
+      const t32 = new Uint32Array(target.buffer, target.byteOffset, minAligned >> 2);
+      for (let k = 0; k < s32.length; k++) {
+        const x = s32[k] ^ t32[k];
+        if (x !== 0) { 
+          if (x & 0xFF) d++; 
+          if (x & 0xFF00) d++; 
+          if (x & 0xFF0000) d++; 
+          if (x & 0xFF000000) d++; 
+        }
+      }
+      for (let k = minAligned; k < min; k++) if (seq[k] !== target[k]) d++;
+      scores[i] = d;
+    }
   }
-  packed.sort();
-  const res = new Int32Array(count);
-  for (let i = 0; i < count; i++) res[i] = Number(packed[i] & 0xFFFFFFFFn);
-  _sortedIndicesCache.set(_currentSort.key, res);
-  _currentSort = null;
+
+  _currentSort.startIdx = endIdx;
+  self.postMessage({ type: "sortUpdate", sortKey: _currentSort.key, progress: endIdx / count, complete: endIdx === count });
+  
+  if (endIdx === count) {
+    const packed = new BigUint64Array(count);
+    const offset = _currentSort.isBlosum ? 1000000 : 0;
+    for (let i = 0; i < count; i++) {
+      packed[i] = (BigInt(_currentSort.isBlosum ? offset - Math.round(scores[i]) : Math.round(scores[i])) << BigInt(32)) | BigInt(i);
+    }
+    packed.sort();
+    const res = new Int32Array(count);
+    for (let i = 0; i < count; i++) res[i] = Number(packed[i] & BigInt(0xFFFFFFFF));
+    _sortedIndicesCache.set(_currentSort.key, res);
+    _currentSort = null;
+  } else {
+    setTimeout(runSortStep, 0);
+  }
 }
 
-// ---- worker entry ----------------------------------------------------------
+function generateUUID(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function formatFieldName(field: string): string {
+  if (field.startsWith("@@")) return field.slice(2);
+  return field;
+}
+
+function parseSeqAnnotations(id: string, sequence: string, description?: string): Record<string, any> {
+  const annotations: Record<string, any> = {
+    [AF.ID]: id,
+    [AF.ACTUAL_ID]: id,
+    [AF.DESCRIPTION]: description ?? "",
+    [AF.REAL_LENGTH]: sequence.replace(/[-.]/g, "").length,
+    [AF.ALIGNED_LENGTH]: sequence.length,
+  };
+  let left = 0, right = 0, internal = 0;
+  let i = 0;
+  while (i < sequence.length && (sequence[i] === "-" || sequence[i] === ".")) { left++; i++; }
+  let j = sequence.length - 1;
+  while (j >= i && (sequence[j] === "-" || sequence[j] === ".")) { right++; j--; }
+  for (let k = i; k <= j; k++) {
+    if (sequence[k] === "-" || sequence[k] === ".") internal++;
+  }
+  annotations[AF.LEFT_GAP_COUNT] = left;
+  annotations[AF.RIGHT_GAP_COUNT] = right;
+  annotations[AF.INTERNAL_GAP_COUNT] = internal;
+  return annotations;
+}
+
+async function* streamToLines(stream: ReadableStream<Uint8Array>): AsyncIterable<string> {
+  const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+  let leftover = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      if (leftover.length > 0) yield leftover;
+      break;
+    }
+    leftover += value;
+    const lines = leftover.split("\n");
+    leftover = lines.pop()!;
+    for (const line of lines) yield line;
+  }
+}
+
+function postProgress(message: string) {
+  self.postMessage({ type: "progress", message });
+}
+
+// ---- incremental analysis --------------------------------------------------
+
+function buildQuickMetadata(
+  fileName: string,
+  removeDuplicateSequences: boolean,
+  partialStats?: {
+    positionalLetterCounts: [number, Record<string, number>][];
+    globalAlphaLetterCounts: Record<string, number>;
+    consensus: { sequence: string; annotations: Record<string, any> };
+  } | null
+): IWorkerMetadata {
+  const query = _storage.get(0);
+  const maxLen = query.sequence.length;
+  
+  const allUniqueCharCodes: Record<number, boolean> = {};
+  const limit = Math.min(_storage.size(), 1000);
+  for (let i = 0; i < limit; i++) {
+    const s = _storage.get(i).sequence;
+    for (let j = 0; j < s.length; j++) allUniqueCharCodes[s.charCodeAt(j)] = true;
+  }
+  const allUniqueChars = Object.keys(allUniqueCharCodes).map(cc => String.fromCharCode(Number(cc)));
+  const NT_CODES = new Set("ATGCUNRYSWKMBDHVatgcunryswkmbdhv-.");
+  const predictedNT = allUniqueChars.every(c => NT_CODES.has(c));
+  const allUpperAlpha = allUniqueChars.filter(c => /[A-Z]/.test(c)).sort();
+
+  const annotationFields: Record<string, { key: string; name: string }> = {};
+  for (const field of Object.keys(query.annotations)) {
+    annotationFields[field] = { key: field, name: formatFieldName(field) };
+  }
+
+  return {
+    name: fileName,
+    uuid: generateUUID(),
+    sequenceCount: _storage.size(),
+    maxSequenceLength: maxLen,
+    predictedNT,
+    numberDuplicateSequencesInAlignment: 0,
+    numberRemovedDuplicateSequences: 0,
+    querySequence: query,
+    consensus: partialStats?.consensus ?? {
+      annotations: { [AF.ID]: "consensus", [AF.ACTUAL_ID]: "consensus" },
+      sequence: query.sequence,
+    },
+    allRepresentedCharacters: allUniqueChars,
+    allUpperAlphaLettersInAlignmentSorted: allUpperAlpha,
+    positionalLetterCounts: partialStats?.positionalLetterCounts ?? [],
+    globalAlphaLetterCounts: partialStats?.globalAlphaLetterCounts ?? {},
+    annotationFields,
+  };
+}
+
+// ---- Worker entry point ----------------------------------------------------
 
 self.onmessage = async (event) => {
-  const msg = event.data;
-  if (msg.type === "getSlice") {
-    const { start, end, requestId, sortKey = "as-input" } = msg;
-    const currentSize = _storage.size();
-    if (sortKey !== "as-input" && !_sortedIndicesCache.has(sortKey) && (!_currentSort || _currentSort.key !== sortKey)) {
-      if (sortKey === "id" || sortKey === "gaps") {
-        const res = new Int32Array(currentSize); for(let i=0; i<currentSize; i++) res[i]=i;
-        if (sortKey === "gaps") {
-          const packed = new BigUint64Array(currentSize);
-          for (let i = 0; i < currentSize; i++) packed[i] = (BigInt(_storage.getAnnotations(i)[AF.INTERNAL_GAP_COUNT] || 0) << 32n) | BigInt(i);
-          packed.sort(); for (let i = 0; i < currentSize; i++) res[i] = Number(packed[i] & 0xFFFFFFFFn);
-        } else { res.sort((a,b) => _storage.getAnnotations(a)[AF.ID] < _storage.getAnnotations(b)[AF.ID] ? -1 : 1); }
-        _sortedIndicesCache.set(sortKey, res); self.postMessage({ type: "sortUpdate", sortKey, progress: 1, complete: true });
-      } else {
-        _currentSort = { key: sortKey, scores: new Float32Array(currentSize), target: new TextEncoder().encode(sortKey.includes("query") ? _querySequence : _consensusSequence), isBlosum: sortKey.startsWith("blosum"), nextIdx: 0, scoredCount: 0 };
-        const pool = getPool();
-        pool.forEach(w => {
-          w.onmessage = (e) => {
-            if (!_currentSort) return;
-            const { startIdx, scores } = e.data;
-            _currentSort.scores.set(scores, startIdx);
-            _currentSort.scoredCount += scores.length;
-            self.postMessage({ type: "sortUpdate", sortKey: _currentSort.key, progress: _currentSort.scoredCount / currentSize, complete: _currentSort.scoredCount === currentSize });
-            if (_currentSort.scoredCount === currentSize) finalizeSort(); else dispatch(w);
+  try {
+    const msg = event.data;
+
+    if (msg.type === "getSlice") {
+      const { start, end, requestId, sortKey = "as-input" } = msg;
+      const currentSize = _storage.size();
+
+      // Trigger sort if needed
+      if (sortKey !== "as-input" && !_sortedIndicesCache.has(sortKey) && (!_currentSort || _currentSort.key !== sortKey)) {
+        if (sortKey === "id" || sortKey === "gaps") {
+          const res = new Int32Array(currentSize); for(let i=0; i<currentSize; i++) res[i]=i;
+          if (sortKey === "gaps") {
+            const packed = new BigUint64Array(currentSize);
+            for (let i = 0; i < currentSize; i++) packed[i] = (BigInt(_storage.getAnnotations(i)[AF.INTERNAL_GAP_COUNT] || 0) << BigInt(32)) | BigInt(i);
+            packed.sort(); for (let i = 0; i < currentSize; i++) res[i] = Number(packed[i] & BigInt(0xFFFFFFFF));
+          } else { 
+            res.sort((a,b) => {
+              const valA = _storage.getAnnotations(a)[AF.ID] || "";
+              const valB = _storage.getAnnotations(b)[AF.ID] || "";
+              return valA < valB ? -1 : (valA > valB ? 1 : 0);
+            }); 
+          }
+          _sortedIndicesCache.set(sortKey, res);
+          self.postMessage({ type: "sortUpdate", sortKey, progress: 1, complete: true });
+        } else {
+          _currentSort = { 
+            key: sortKey, 
+            scores: new Float32Array(currentSize), 
+            target: new TextEncoder().encode(sortKey.includes("query") ? _querySequence : _consensusSequence), 
+            isBlosum: sortKey.startsWith("blosum"), 
+            startIdx: 0 
           };
-          dispatch(w);
-        });
-      }
-    }
-    const indices = _sortedIndicesCache.get(sortKey); const sequences: string[] = [], annotations: any[] = [];
-    for (let i = start; i < Math.min(end, currentSize); i++) {
-      const idx = (indices && i < indices.length) ? indices[i] : i;
-      const s = _storage.get(idx); sequences.push(s.sequence); annotations.push(s.annotations);
-    }
-    self.postMessage({ type: "slice", requestId, sequences, annotations });
-  } else if (msg.type === "parse") {
-    _storage.clear(); _sortedIndicesCache.clear(); _currentSort = null; await _storage.initialize(true);
-    const stream = msg.file ? msg.file.stream() : (await fetch(msg.url)).body;
-    const reader = stream.getReader();
-    let header: string | null = null, seqBuf = new Uint8Array(1024 * 1024), seqPtr = 0;
-    let headBuf = new Uint8Array(2048), headPtr = 0, inHeader = false, lineStart = true, firstSent = false, maxLen = 0;
-    while (true) {
-      const { value, done } = await reader.read(); if (done) break;
-      for (let i = 0; i < value.length; i++) {
-        const b = value[i];
-        if (b === 10) { if (inHeader) { header = new TextDecoder().decode(headBuf.subarray(0, headPtr)).trim(); headPtr = 0; inHeader = false; } lineStart = true; continue; }
-        if (b === 13) continue;
-        if (lineStart && b === 62) {
-          if (header) { _storage.add(seqBuf.subarray(0, seqPtr), parseSeqAnnotations(header.split(/\s+/)[0], seqBuf.subarray(0, seqPtr))); if (seqPtr > maxLen) maxLen = seqPtr; seqPtr = 0; }
-          inHeader = true; lineStart = false; continue;
+          setTimeout(runSortStep, 0);
         }
-        if (inHeader) { if (headPtr >= headBuf.length) { const n = new Uint8Array(headBuf.length*2); n.set(headBuf); headBuf=n; } headBuf[headPtr++] = b; }
-        else if (b !== 32) { if (seqPtr >= seqBuf.length) { const n = new Uint8Array(seqBuf.length*2); n.set(seqBuf); seqBuf=n; } seqBuf[seqPtr++] = b; }
-        lineStart = false;
       }
-      if (!firstSent && _storage.size() >= 100) { firstSent = true; self.postMessage({ type: "done", data: buildQuickMetadata(msg.alignmentName || "file", _storage.size(), maxLen) }); }
+
+      const indices = _sortedIndicesCache.get(sortKey);
+      const sequences: string[] = [], annotations: any[] = [];
+      const clampedEnd = Math.min(end, currentSize);
+      for (let i = start; i < clampedEnd; i++) {
+        const idx = (indices && i < indices.length) ? indices[i] : i;
+        const s = _storage.get(idx);
+        sequences.push(s.sequence); annotations.push(s.annotations);
+      }
+      self.postMessage({ type: "slice", requestId, sequences, annotations });
+      return;
     }
-    if (header) { _storage.add(seqBuf.subarray(0, seqPtr), parseSeqAnnotations(header.split(/\s+/)[0], seqBuf.subarray(0, seqPtr))); if (seqPtr > maxLen) maxLen = seqPtr; }
-    _storage.flush(); _querySequence = _storage.get(0).sequence;
-    self.postMessage({ type: "done", data: buildQuickMetadata(msg.alignmentName || "file", _storage.size(), maxLen) });
+
+    if (msg.type !== "parse") return;
+
+    const { file, url, alignmentName, removeDuplicateSequences } = msg;
+    _storage.clear();
+    _sortedIndicesCache.clear();
+    _currentSort = null;
+
+    await _storage.initialize(true);
+
+    let stream: ReadableStream<Uint8Array>;
+    let fileName = alignmentName || (file ? file.name : "alignment");
+
+    if (file) {
+      postProgress("Reading file…");
+      stream = file.stream();
+    } else if (url) {
+      postProgress("Connecting…");
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+      stream = resp.body!;
+    } else throw new Error("No file or URL provided");
+
+    const lineIter = streamToLines(stream);
+    const iter = lineIter[Symbol.asyncIterator]();
+
+    let firstLine = "";
+    let firstResult: IteratorResult<string> = { value: "", done: true };
+    while (true) {
+      firstResult = await iter.next();
+      if (firstResult.done) break;
+      const t = firstResult.value.replace(/\r$/, "").trim();
+      if (t) { firstLine = t; break; }
+    }
+    if (!firstLine) throw Object.assign(new Error("Empty file"), { name: "File Error" });
+
+    async function* prepended(): AsyncIterable<string> {
+      yield firstResult.value;
+      while (true) {
+        const r = await iter.next();
+        if (r.done) break;
+        yield r.value;
+      }
+    }
+
+    let firstBatchSent = false;
+    let currentMaxLen = 0;
+    let runningFlatCounts: Float64Array | null = null;
+    let runningGlobalCounts: Float64Array | null = null;
+    const charCodeToIdx = new Map<number, number>();
+    const idxToChar: string[] = [];
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-".split("").forEach(c => {
+      charCodeToIdx.set(c.charCodeAt(0), idxToChar.length);
+      idxToChar.push(c);
+    });
+
+    const getPartialStats = () => {
+      if (!runningFlatCounts || !runningGlobalCounts) return null;
+      const numChars = idxToChar.length;
+      const positionalLetterCounts: [number, Record<string, number>][] = [];
+      for (let pi = 0; pi < currentMaxLen; pi++) {
+        const lc: Record<string, number> = {};
+        for (let ci = 0; ci < numChars; ci++) {
+          const count = runningFlatCounts[pi * numChars + ci];
+          if (count > 0) lc[idxToChar[ci]] = count;
+        }
+        positionalLetterCounts.push([pi, lc]);
+      }
+      const globalAlphaLetterCounts: Record<string, number> = {};
+      for (let ci = 0; ci < numChars; ci++) {
+        if (runningGlobalCounts[ci] > 0) globalAlphaLetterCounts[idxToChar[ci]] = runningGlobalCounts[ci];
+      }
+      const consensusSeq = positionalLetterCounts.map(([, lc]) => 
+        Object.entries(lc).sort((a,b) => b[1] - a[1])[0]?.[0] ?? "-"
+      ).join("");
+      return { positionalLetterCounts, globalAlphaLetterCounts, consensus: { annotations: {}, sequence: consensusSeq } };
+    };
+
+    const checkUpdates = () => {
+      if (!firstBatchSent && _storage.size() >= 100) {
+        firstBatchSent = true;
+        const stats = getPartialStats();
+        self.postMessage({ type: "done", data: buildQuickMetadata(fileName, removeDuplicateSequences, stats) });
+      } else if (firstBatchSent && _storage.size() % 1000 === 0) {
+        const stats = getPartialStats();
+        self.postMessage({ type: "stats", data: { ...stats, sequenceCount: _storage.size() } });
+      }
+    };
+
+    if (firstLine.startsWith(">")) {
+      let currentHeader: string | null = null;
+      let currentParts: string[] = [];
+      const flush = () => {
+        if (!currentHeader) return;
+        const sequence = currentParts.join("");
+        if (currentMaxLen === 0) {
+          currentMaxLen = sequence.length;
+          runningFlatCounts = new Float64Array(currentMaxLen * idxToChar.length);
+          runningGlobalCounts = new Float64Array(idxToChar.length);
+        }
+        const numChars = idxToChar.length;
+        for (let pi = 0; pi < Math.min(sequence.length, currentMaxLen); pi++) {
+          const ci = charCodeToIdx.get(sequence.charCodeAt(pi));
+          if (ci !== undefined) { runningFlatCounts![pi * numChars + ci]++; runningGlobalCounts![ci]++; }
+        }
+        _storage.add(sequence, parseSeqAnnotations(currentHeader.split(/\s+/)[0], sequence));
+        checkUpdates();
+        currentParts = [];
+      };
+      for await (const rawLine of prepended()) {
+        const line = rawLine.replace(/\r$/, "");
+        if (line.startsWith(">")) { flush(); currentHeader = line.slice(1); }
+        else if (currentHeader) currentParts.push(line.trim());
+      }
+      flush();
+    } else {
+      throw new Error("Only FASTA supported for disk-streaming mode currently.");
+    }
+
+    _storage.flush();
+    const finalStats = getPartialStats();
+    self.postMessage({ type: "done", data: buildQuickMetadata(fileName, removeDuplicateSequences, finalStats) });
+    _querySequence = _storage.get(0).sequence;
+    _consensusSequence = finalStats?.consensus.sequence ?? _querySequence;
+
+  } catch (e: any) {
+    self.postMessage({
+      type: "error",
+      name: (e.name ?? "Error"),
+      message: e.message || String(e),
+    });
   }
 };
-
-function parseSeqAnnotations(id: string, bytes: Uint8Array): any {
-  let g = 0; for(let i=0; i<bytes.length; i++) if (bytes[i] === 45 || bytes[i] === 46) g++;
-  return { [AF.ID]: id, [AF.INTERNAL_GAP_COUNT]: g, [AF.REAL_LENGTH]: bytes.length - g, [AF.ALIGNED_LENGTH]: bytes.length };
-}
-
-function buildQuickMetadata(name: string, count: number, maxLen: number): IWorkerMetadata {
-  const q = _storage.get(0);
-  return {
-    name, uuid: "123", sequenceCount: count, maxSequenceLength: maxLen || 1,
-    predictedNT: false, numberDuplicateSequencesInAlignment: 0, numberRemovedDuplicateSequences: 0,
-    querySequence: q, consensus: q, allRepresentedCharacters: ["A","C","G","T","N","R","Y","S","W","K","M","B","D","H","V","-","."],
-    allUpperAlphaLettersInAlignmentSorted: ["A","C","G","T","N"], positionalLetterCounts: [], globalAlphaLetterCounts: {},
-    annotationFields: { [AF.ID]: { key: AF.ID, name: "ID" }, [AF.INTERNAL_GAP_COUNT]: { key: AF.INTERNAL_GAP_COUNT, name: "Gaps" } }
-  };
-}

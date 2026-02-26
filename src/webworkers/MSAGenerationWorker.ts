@@ -139,22 +139,19 @@ export function generateCanvases() {
         targetTileWidth: number,
         targetTileHeight: number
       ) => {
-        const tileCanvas = new OffscreenCanvas(tileWidth, tileHeight);
-        tileCanvas.height = tileHeight;
-        tileCanvas.width = tileWidth;
+        // DEFENSIVE: Ensure width and height are valid (> 0)
+        const safeWidth = Math.max(1, Math.floor(tileWidth));
+        const safeHeight = Math.max(1, Math.floor(tileHeight));
+        
+        const tileCanvas = new OffscreenCanvas(safeWidth, safeHeight);
+        tileCanvas.height = safeHeight;
+        tileCanvas.width = safeWidth;
     
         const offsets = {
           seqY: tileYNumber * targetTileHeight,
           letterX: tileXNumber * targetTileWidth,
         };
-        const tileCanvasContext = tileCanvas.getContext("2d"); //tileCanvas.getContext("2d");
-        //~30% of the time (500-1000 ms on large test) - most of the time is "getImageData"
-        //also note that filLRect is 20% slower than using path.
-        //TODO  can skip this if we cache the context and teh width/height is the same.
-        //tileCanvasContext?.beginPath();
-        //tileCanvasContext?.rect(0, 0, tileCanvas.width, tileCanvas.height);
-        //tileCanvasContext?.fill();
-        //tileCanvasContext?.closePath();
+        const tileCanvasContext = tileCanvas.getContext("2d");
         const tileImageData = tileCanvasContext?.getImageData(
           0,
           0,
@@ -162,12 +159,11 @@ export function generateCanvases() {
           tileCanvas.height
         );
     
-        //~70% of the time is spent here (2000-3000)ms on large test)
         if (tileImageData && tileCanvasContext) {
           colorCanvasWithSequences(
             tileImageData.data,
-            tileWidth, 
-            tileHeight,
+            safeWidth, 
+            safeHeight,
             offsets
           );
           tileCanvasContext.putImageData(tileImageData, 0, 0);
@@ -185,8 +181,8 @@ export function generateCanvases() {
     
       //slow with large alignments - webworker?
       const getTiledImages = (): ITiledImages => {
-        const targetTileWidth = tileSize;//1000000;
-        const targetTileHeight = tileSize;//1000000;
+        const targetTileWidth = Math.max(1, tileSize);
+        const targetTileHeight = Math.max(1, tileSize);
     
         const toreturn = {
           targetTileWidth: targetTileWidth,
@@ -209,6 +205,10 @@ export function generateCanvases() {
               : Math.floor(fullHeight / targetTileHeight),
           tiles: [] as ISingleTile[],
         };
+
+        // Final safety check: if everything is zero, don't generate any tiles
+        if (fullWidth <= 0 || fullHeight <= 0) return toreturn;
+
         for (
           let tileYNumber = 0;
           tileYNumber < toreturn.numYTiles;

@@ -1,8 +1,5 @@
-/**
- * This class contains methods for sorting sequences
- */
 import { IListOfPropObjects, IPropObjectInstanceInList } from "./GlobalEnumObject";
-import { Alignment, ISequence } from "./Alignment";
+import type { Alignment, ISequence } from "./Alignment";
 import { BLOSUM62 } from "./BLOSUM";
 import { DEFAULT_ANNOTATION_FIELDS } from "./Annotations";
 
@@ -65,7 +62,7 @@ export const SequenceSorter = (() => {
       description: "As input",
       targetAlignmentType: "both",
       sortFn: (sequencesAsInput, alignment) => sequencesAsInput
-     } satisfies SequenceSorterInstance,
+     } as SequenceSorterInstance,
     
     ID: {
       key: "id",
@@ -76,7 +73,7 @@ export const SequenceSorter = (() => {
           a.annotations[DEFAULT_ANNOTATION_FIELDS.ID].localeCompare(b.annotations[DEFAULT_ANNOTATION_FIELDS.ID])
         );
       }
-    } satisfies SequenceSorterInstance,
+    } as SequenceSorterInstance,
 
     GAPS: {
       key: "gaps",
@@ -88,7 +85,7 @@ export const SequenceSorter = (() => {
           ((b.annotations[DEFAULT_ANNOTATION_FIELDS.INTERNAL_GAP_COUNT] as number) || 0)
         );
       }
-    } satisfies SequenceSorterInstance,
+    } as SequenceSorterInstance,
 
     HAMMING_DIST_QUERY: {
       key: "hamming-dist-to-query",
@@ -105,7 +102,7 @@ export const SequenceSorter = (() => {
               return distMap.get(seq1)! - distMap.get(seq2)!;
             });
         }
-    } satisfies SequenceSorterInstance,
+    } as SequenceSorterInstance,
     
     HAMMING_DIST_CONSENSUS: {
       key: "hamming-dist-to-consensus",
@@ -122,7 +119,7 @@ export const SequenceSorter = (() => {
             return distMap.get(seq1)! - distMap.get(seq2)!;
           });
         }
-    } satisfies SequenceSorterInstance,
+    } as SequenceSorterInstance,
     
     BLOSUM62_SCORE_QUERY: {
       key: "blosum-score-to-query",
@@ -136,10 +133,10 @@ export const SequenceSorter = (() => {
         }
         return [...sequences]
           .sort((seq1, seq2) => {
-            return scoreMap.get(seq2)! - scoreMap.get(seq1)!; //reverse from distance
+            return scoreMap.get(seq2)! - scoreMap.get(seq1)!; //reverse
           });
         }
-    } satisfies SequenceSorterInstance,
+    } as SequenceSorterInstance,
     
     BLOSUM62_SCORE_CONSENSUS: {
       key: "blosum-score-to-consensus",
@@ -153,10 +150,10 @@ export const SequenceSorter = (() => {
         }
         return [...sequences]
           .sort((seq1, seq2) => {
-            return scoreMap.get(seq2)! - scoreMap.get(seq1)!; //reverse from distance
+            return scoreMap.get(seq2)! - scoreMap.get(seq1)!; //reverse
           });
         }
-    } satisfies SequenceSorterInstance,
+    } as SequenceSorterInstance,
   };
   
   // 
@@ -166,11 +163,11 @@ export const SequenceSorter = (() => {
   // 
   const propListObj = IListOfPropObjects(Object.values(propList));
 
-  const aminoAcidSorters = propListObj.list.filter(seqSort => 
+  const aminoAcidSorters = (propListObj.list as SequenceSorterInstance[]).filter(seqSort => 
     seqSort.targetAlignmentType === "aminoacid" || seqSort.targetAlignmentType === "both"
   );
 
-  const nucleotideSorters = propListObj.list.filter(seqSort => 
+  const nucleotideSorters = (propListObj.list as SequenceSorterInstance[]).filter(seqSort => 
     seqSort.targetAlignmentType === "nucleotide" || seqSort.targetAlignmentType === "both"
   );
 
@@ -179,6 +176,7 @@ export const SequenceSorter = (() => {
     ALL_NUCLEOTIDE_SORTERS: nucleotideSorters,
     ...propList,
     ...propListObj,
-    list: propListObj.list
+    list: propListObj.list as SequenceSorterInstance[]
   };
 })();
+

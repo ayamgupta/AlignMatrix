@@ -9,6 +9,7 @@ import {
 
 import { MiniMap } from "./minimap/MiniMapHook";
 import { Alignment } from "../common/Alignment";
+import { AlignmentLoader } from "../common/AlignmentLoader";
 import { DEFAULT_ANNOTATION_FIELDS } from "../common/Annotations";
 import { SequenceSorter, SequenceSorterInstance } from "../common/AlignmentSorter";
 import { reduxStore } from "../redux/ReduxStore";
@@ -342,23 +343,17 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
   
     // Track the visible row range so we only re-fetch when it changes
     const [visibleRowRange, setVisibleRowRange] = useState<{ start: number; end: number } | null>(null);
-
-    // Incremented on every background sort chunk update to trigger re-fetches
     const [sortVersion, setSortVersion] = useState<number>(0);
-    const [sortProgress, setSortProgress] = useState<number | null>(null);
 
     useEffect(() => {
-      AlignmentLoader.onSortUpdate = (key, progress, complete) => {
-        if (key === sortBy?.key) {
-          if (complete) {
-            setSortProgress(null);
-            setSortVersion(v => v + 1);
-          } else {
-            setSortProgress(Math.round(progress * 100));
-          }
+      const originalHandler = AlignmentLoader.onSortUpdate;
+      AlignmentLoader.onSortUpdate = (key: string, progress: number, complete: boolean) => {
+        if (originalHandler) originalHandler(key, progress, complete);
+        if (key === sortBy?.key && complete) {
+          setSortVersion(v => v + 1);
         }
       };
-      return () => { AlignmentLoader.onSortUpdate = undefined; };
+      return () => { AlignmentLoader.onSortUpdate = originalHandler; };
     }, [sortBy?.key]);
 
   // Whenever the alignment changes, reset and load sequences
@@ -428,7 +423,7 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
           setRowOffset(sliceStart);
         }
       }
-    );
+    ).catch(()=>{});
     return () => { cancelled = true; };
   }, [alignment, visibleRowRange, sortBy, sortVersion]);
 
@@ -789,20 +784,10 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
             horizContent: true,
             vertContent: true,
             content: (
-              <div style={{position: "relative", width: "100%", height: "100%"}}>
-                {sortProgress !== null && (
-                  <div style={{
-                    position: "absolute", top: 10, right: 20, zIndex: 1000,
-                    backgroundColor: "rgba(0,0,0,0.7)", color: "white", padding: "4px 12px",
-                    borderRadius: "4px", fontSize: "12px", fontWeight: "bold", pointerEvents: "none"
-                  }}>
-                    Sorting... {sortProgress}%
-                  </div>
-                )}
-                <MSABlocksAndLetters
-                  canvasGenerator={
-                    canvasGenerators.primaryViewportApp
-                  }
+              <MSABlocksAndLetters
+                canvasGenerator={
+                  canvasGenerators.primaryViewportApp
+                }
                 sequenceSet={"alignment"}
                 alignment={alignment}
                 sortBy={sortBy}
@@ -852,13 +837,11 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
                       setVisibleRowRange({ start: newStart, end: newEnd });
                     }
                   }
-                                    }
-                                  }
-                                ></MSABlocksAndLetters>
-                              </div>
-                            )
-                          })
-                        }}
+                }}
+              ></MSABlocksAndLetters>
+            )
+          })
+        }}
 
         consensus={renderedConsensusSeq}
 

@@ -188,6 +188,7 @@ export class AlignmentLoader {
     worker.onmessage = (event) => {
       const msg = event.data as
         | { type: "progress"; message: string }
+        | { type: "sortUpdate"; sortKey: string; progress: number; complete: boolean }
         | { type: "done"; data: any }
         | { type: "stats"; data: any }
         | { type: "slice"; requestId: number; sequences: string[]; annotations: any[] }
