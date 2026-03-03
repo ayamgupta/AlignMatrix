@@ -43,19 +43,29 @@ export default function App(){
   const [sortProgress, setSortProgress] = useState<number | null>(null);
 
   useEffect(() => {
+    if (settings.currentlySelectedProperties.sortBy?.key === "as-input") {
+      setSortProgress(null);
+    } else {
+      setSortProgress(0);
+    }
     const originalOnSortUpdate = AlignmentLoader.onSortUpdate;
     AlignmentLoader.onSortUpdate = (key: string, progress: number, complete: boolean) => {
       if (originalOnSortUpdate) originalOnSortUpdate(key, progress, complete);
       if (key === settings.currentlySelectedProperties.sortBy?.key) {
-        if (complete) {
-          setSortProgress(null);
-        } else {
-          setSortProgress(Math.round(progress * 100));
-        }
+        const p = Math.round(progress * 100);
+        setSortProgress(progress > 0 && p === 0 ? 1 : p);
       }
     };
+
+    const originalOnDataRefreshed = AlignmentLoader.onDataRefreshed;
+    AlignmentLoader.onDataRefreshed = () => {
+      if (originalOnDataRefreshed) originalOnDataRefreshed();
+      setSortProgress(null);
+    };
+
     return () => {
       AlignmentLoader.onSortUpdate = originalOnSortUpdate;
+      AlignmentLoader.onDataRefreshed = originalOnDataRefreshed;
     };
   }, [settings.currentlySelectedProperties.sortBy?.key]);
 

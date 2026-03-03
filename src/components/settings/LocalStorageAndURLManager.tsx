@@ -7,7 +7,7 @@ import Select, { MultiValue } from "react-select";
 export const globalSettingsUrlLocalStorageManager = (() => {
     let initialized = false;
     const LOCALSTORAGE_KEY = "AV2_UI_SETTINGS_CACHE";
-    const ALIGNMENT_URL_KEY = "alignment-url";
+    const ALIGNMENT_URL_KEY = "alignment-file";
     let VALID_SAVE_PROP_KEYS: string[] | undefined = undefined;
 
     const writeParamsToUrlAndLocalstorage = (params: URLSearchParams) => {

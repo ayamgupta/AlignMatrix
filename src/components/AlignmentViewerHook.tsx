@@ -356,8 +356,9 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
       return () => { AlignmentLoader.onSortUpdate = originalHandler; };
     }, [sortBy?.key]);
 
-  // Whenever the alignment changes, reset and load sequences
+  // Effect 1: Initial load when alignment or sort TYPE changes
   useEffect(() => {
+    let cancelled = false;
     if (!alignment.getSlice) {
       // Small/URL file: sequences are in memory, load synchronously
       const seqs = alignment
@@ -369,20 +370,26 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
       setSequences(seqs);
       setSequenceAnnotations(anns);
       setVisibleRowRange(null);
+      AlignmentLoader.onDataRefreshed?.();
     } else {
-      // Large file: eagerly fetch an initial window of rows so the viewer
-      // has something to render before the first matrixRendered callback fires.
-      setSequences([]);
-      setSequenceAnnotations([]);
-      const initialEnd = Math.min(200, alignment.getSequenceCount());
-      alignment.getSlice(0, initialEnd, sortBy?.key).then(({ sequences: seqs, annotations: anns }) => {
-        setSequences(seqs);
-        setSequenceAnnotations(anns);
-        setRowOffset(0);
-      });
+      // Large file: eager fetch of top sequences ONLY if we don't have a visible range
+      if (visibleRowRange === null) {
+        setSequences([]);
+        setSequenceAnnotations([]);
+        const initialEnd = Math.min(200, alignment.getSequenceCount());
+        alignment.getSlice(0, initialEnd, sortBy?.key).then(({ sequences: seqs, annotations: anns }) => {
+          if (!cancelled) {
+            setSequences(seqs);
+            setSequenceAnnotations(anns);
+            setRowOffset(0);
+            AlignmentLoader.onDataRefreshed?.();
+          }
+        });
+      }
     }
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alignment, sortBy]);
+  }, [alignment, sortBy?.key]);
 
   useEffect(() => {
     if (!alignment.getSlice) {
@@ -409,7 +416,7 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
     return () => { if (statsCheckTimer.current) clearTimeout(statsCheckTimer.current); };
   }, [alignment, props.statsVersion]);
 
-  // For large files: fetch the visible row slice when the viewport changes
+  // Effect 2: Refresh visible rows when scrolling OR when background sorting completes
   useEffect(() => {
     if (!alignment.getSlice || visibleRowRange === null) return;
     let cancelled = false;
@@ -421,11 +428,12 @@ export function AlignmentViewer(props: IAlignmentViewerProps) {
           setSequences(seqs);
           setSequenceAnnotations(anns);
           setRowOffset(sliceStart);
+          AlignmentLoader.onDataRefreshed?.();
         }
       }
     ).catch(()=>{});
     return () => { cancelled = true; };
-  }, [alignment, visibleRowRange, sortBy, sortVersion]);
+  }, [alignment, visibleRowRange, sortBy?.key, sortVersion]);
 
   
 
