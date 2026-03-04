@@ -790,8 +790,8 @@ for (let i = _currentSort.startIdx; i < endIdx; i++) {
     let s = 0;
     const min = Math.min(len, targetLen);
     for (let k = 0; k < min; k++) {
-      const a = UPPERCASE_MAP[seq[k]];
-      const b = UPPERCASE_MAP[target[k]];
+      const a = seq[k];
+      const b = target[k];
       if (a < 128 && b < 128) {
         const score = BLOSUM62_BYTES[b * 128 + a];
         if (score !== -128) s += score;
@@ -799,11 +799,11 @@ for (let i = _currentSort.startIdx; i < endIdx; i++) {
     }
     scores[i] = s;
   } else {
-    // Hamming distance (Case-Insensitive)
+    // Hamming distance (Case-Sensitive)
     let d = Math.abs(len - targetLen);
     const min = Math.min(len, targetLen);
     for (let k = 0; k < min; k++) {
-      if (UPPERCASE_MAP[seq[k]] !== UPPERCASE_MAP[target[k]]) d++;
+      if (seq[k] !== target[k]) d++;
     }
     scores[i] = d;
   }
